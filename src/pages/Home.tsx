@@ -365,12 +365,16 @@ export default function Home() {
         form.setValue("treatment", codeRecord.treatment);
         // Auto-fill medicine rows from complaint code template
         if (codeRecord.medicines && codeRecord.medicines.length > 0) {
-          setMedRows(codeRecord.medicines.map(m => ({
-            medicineName: m.medicineName,
-            qty: m.defaultQty,
-            mrp: m.mrp || 0,
-          })));
-          // Auto-calc other charges = 0, bill amount = gross
+          const medicines = getMedicines();
+          setMedRows(codeRecord.medicines.map(m => {
+            // Get MRP from purchase bills / medicine master
+            const med = medicines.find(med => med.name.toLowerCase() === m.medicineName.toLowerCase());
+            return {
+              medicineName: m.medicineName,
+              qty: m.defaultQty,
+              mrp: med?.mrp || 0,
+            };
+          }));
         }
       }
     }

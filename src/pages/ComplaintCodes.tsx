@@ -116,7 +116,7 @@ export default function ComplaintCodes() {
                       <tr>
                         <th className="px-4 py-2 text-left text-slate-500 font-semibold">Medicine Name</th>
                         <th className="px-3 py-2 text-right text-slate-500 font-semibold w-24">Default Qty</th>
-                        <th className="px-3 py-2 text-right text-slate-500 font-semibold w-24">MRP (₹)</th>
+
                         <th className="px-3 py-2 w-10"></th>
                       </tr>
                     </thead>
@@ -138,12 +138,7 @@ export default function ComplaintCodes() {
                               onChange={e => updateMed(i, "defaultQty", Number(e.target.value))}
                               className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-primary/50" />
                           </td>
-                          <td className="px-3 py-2">
-                            <input type="number" step="0.01" value={m.mrp || ""}
-                              onChange={e => updateMed(i, "mrp", Number(e.target.value))}
-                              placeholder="0.00"
-                              className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                          </td>
+
                           <td className="px-3 py-2 text-center">
                             <button onClick={() => setMedicines(p => p.filter((_, idx) => idx !== i))}
                               className="text-red-400 hover:text-red-600">
@@ -192,7 +187,7 @@ export default function ComplaintCodes() {
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {c.medicines.map((m, i) => (
                         <span key={i} className="bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-full">
-                          {m.medicineName} × {m.defaultQty} {m.mrp > 0 && <span className="text-slate-400">₹{m.mrp}</span>}
+                          {m.medicineName} × {m.defaultQty}
                         </span>
                       ))}
                     </div>
