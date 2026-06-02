@@ -1,0 +1,862 @@
+// ClinicPro — localStorage data store
+// ALL keys use "cp_" prefix — completely separate from old app's "mc_" keys.
+// Zero data collision with the old Manglam Clinic app.
+
+// ═══════════════════════════════════════════════════════════════
+// SHARED TYPES (copied from old app — unchanged)
+// ═══════════════════════════════════════════════════════════════
+
+export interface Patient {
+  id: number;
+  patientNo?: string;
+  name: string;
+  age: number;
+  ageMonths?: number;
+  weight?: string;
+  address: string;
+  mobile: string;
+  complaintCode?: string;
+  complaint?: string;
+  treatment?: string;
+  advice?: string;
+  reports?: string;
+  fees: number;
+  attachments?: string[];
+  registerType?: "general" | "ayurvedic";
+  visitDate: string;
+  createdAt: string;
+}
+
+export interface ComplaintCode {
+  id: number;
+  code: string;
+  complaint: string;
+  treatment: string;
+  createdAt: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NEW TYPES — Medicine, Inventory, Billing, Profit
+// ═══════════════════════════════════════════════════════════════
+
+export interface MedicineItem {
+  id: number;
+  name: string;           // "Flumet IV 100ml"
+  mrp: number;            // 97.00
+  reorderLevel: number;   // alert when stock <= this
+  currentStock: number;   // total units on hand
+  landingCost: number;    // average landing cost per unit (updated on each purchase)
+  createdAt: string;
+}
+
+export interface PurchaseBillItem {
+  medicineId: number;
+  medicineName: string;
+  mrp: number;
+  batchNo: string;
+  expiryDate: string;     // "MM/YY"
+  qtyPaid: number;
+  qtyFree: number;
+  ratePerUnit: number;
+  discountPct: number;
+  gstPct: number;
+  // Auto-calculated
+  landingCostPerUnit: number;
+  totalQtyReceived: number;
+  taxableAmount: number;
+  gstAmount: number;
+  totalPaid: number;
+}
+
+export interface PurchaseBill {
+  id: number;
+  supplierName: string;
+  billNo: string;
+  billDate: string;
+  items: PurchaseBillItem[];
+  grandTotal: number;
+  createdAt: string;
+}
+
+export interface MedicineSaleItem {
+  medicineId: number;
+  medicineName: string;
+  qty: number;
+  mrp: number;
+  landingCost: number;
+  salePrice: number;      // mrp * qty
+  profit: number;         // (mrp - landingCost) * qty
+}
+
+export interface MedicineBill {
+  id: number;
+  patientId?: number;     // optional — can be a loose/walk-in sale
+  patientName: string;
+  doctorId: number;       // 1 or 2
+  billDate: string;
+  items: MedicineSaleItem[];
+  totalSale: number;
+  totalCost: number;
+  totalProfit: number;
+  createdAt: string;
+}
+
+export interface Doctor {
+  id: number;
+  name: string;
+  profitSharePct: number; // e.g. 60 for 60%
+}
+
+export interface StockLedgerEntry {
+  id: number;
+  medicineId: number;
+  medicineName: string;
+  type: "purchase" | "sale" | "adjustment";
+  qty: number;            // positive = in, negative = out
+  balanceAfter: number;
+  refId?: number;         // purchaseBillId or medicineBillId
+  refNo?: string;         // bill no or patient name
+  date: string;
+  createdAt: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STORAGE KEYS — all cp_ prefixed
+// ═══════════════════════════════════════════════════════════════
+
+const PATIENTS_KEY        = "cp_patients";
+const CODES_KEY           = "cp_complaint_codes";
+const COUNTER_KEY         = "cp_id_counter";
+const PATIENT_NO_KEY      = "cp_patient_no_counter";
+const MEDICINES_KEY       = "cp_medicines";
+const PURCHASE_BILLS_KEY  = "cp_purchase_bills";
+const MEDICINE_BILLS_KEY  = "cp_medicine_bills";
+const DOCTORS_KEY         = "cp_doctors";
+const STOCK_LEDGER_KEY    = "cp_stock_ledger";
+
+// ═══════════════════════════════════════════════════════════════
+// ID COUNTER (shared across all entities)
+// ═══════════════════════════════════════════════════════════════
+
+function nextId(): number {
+  const val = parseInt(localStorage.getItem(COUNTER_KEY) || "0") + 1;
+  localStorage.setItem(COUNTER_KEY, String(val));
+  return val;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PATIENT NO & CASE NO
+// ═══════════════════════════════════════════════════════════════
+
+export function getNextPatientNo(visitDate: string): string {
+  const dateKey = visitDate.replace(/-/g, "");
+  const counterKey = `${PATIENT_NO_KEY}_${dateKey}`;
+  const val = parseInt(localStorage.getItem(counterKey) || "0") + 1;
+  localStorage.setItem(counterKey, String(val));
+  return String(val).padStart(2, "0");
+}
+
+export function getNextCaseNo(visitDate: string): string {
+  const d = new Date(visitDate + "T00:00:00");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  const dateKey = `${dd}${mm}${yy}`;
+  const counterKey = `cp_case_no_${dateKey}`;
+  const val = parseInt(localStorage.getItem(counterKey) || "0") + 1;
+  localStorage.setItem(counterKey, String(val));
+  return `00${dateKey}${String(val).padStart(2, "0")}`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PATIENTS (all functions copied from old app)
+// ═══════════════════════════════════════════════════════════════
+
+export function getPatients(): Patient[] {
+  try { return JSON.parse(localStorage.getItem(PATIENTS_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function savePatients(patients: Patient[]) {
+  localStorage.setItem(PATIENTS_KEY, JSON.stringify(patients));
+}
+
+export function addPatient(data: Omit<Patient, "id" | "createdAt">): Patient {
+  const patients = getPatients();
+  const patient: Patient = { ...data, id: nextId(), createdAt: new Date().toISOString() };
+  patients.push(patient);
+  savePatients(patients);
+  return patient;
+}
+
+export function updatePatient(id: number, data: Partial<Patient>): Patient | null {
+  const patients = getPatients();
+  const idx = patients.findIndex((p) => p.id === id);
+  if (idx === -1) return null;
+  patients[idx] = { ...patients[idx], ...data };
+  savePatients(patients);
+  return patients[idx];
+}
+
+export function deletePatient(id: number): boolean {
+  const patients = getPatients();
+  const filtered = patients.filter((p) => p.id !== id);
+  savePatients(filtered);
+  return filtered.length !== patients.length;
+}
+
+export function getPatientsByDate(date: string): Patient[] {
+  return getPatients().filter((p) => p.visitDate === date)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export function getAyurvedicPatientsByDate(date: string): Patient[] {
+  return getPatients().filter((p) => p.visitDate === date && p.registerType === "ayurvedic")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export function lookupByMobile(mobile: string): { latestInfo?: Patient; history: Patient[] } {
+  const q = (mobile || "").trim();
+  if (q.length < 3) return { history: [] };
+  const all = getPatients().filter((p) => p.mobile.toLowerCase().includes(q.toLowerCase()));
+  const sorted = all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return { latestInfo: sorted[0], history: sorted };
+}
+
+export function lookupByName(name: string): { latestInfo?: Patient; history: Patient[] } {
+  const q = (name || "").trim();
+  if (q.length < 2) return { history: [] };
+  const all = getPatients().filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
+  const sorted = all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return { latestInfo: sorted[0], history: sorted };
+}
+
+export function lookupByComplaint(query: string): Patient[] {
+  if (!query || query.length < 2) return [];
+  const q = query.toLowerCase();
+  return getPatients()
+    .filter(p => (p.complaint || "").toLowerCase().includes(q) || (p.complaintCode || "").toLowerCase().includes(q))
+    .sort((a, b) => b.visitDate.localeCompare(a.visitDate));
+}
+
+export function lookupByAddress(query: string): Patient[] {
+  if (!query || query.length < 2) return [];
+  const q = query.toLowerCase();
+  return getPatients()
+    .filter(p => (p.address || "").toLowerCase().includes(q))
+    .sort((a, b) => b.visitDate.localeCompare(a.visitDate));
+}
+
+export interface PatientSuggestion {
+  name: string;
+  mobile: string;
+  age: number;
+  ageMonths?: number;
+  weight?: string;
+  address?: string;
+  visitCount: number;
+  lastVisit: string;
+  recentVisits: Patient[];
+}
+
+export function searchPatientSuggestions(query: string): PatientSuggestion[] {
+  if (!query || query.length < 2) return [];
+  const q = query.toLowerCase();
+  const all = getPatients().filter(p => p.name.toLowerCase().includes(q));
+  const byMobile = new Map<string, Patient[]>();
+  for (const p of all) {
+    if (!byMobile.has(p.mobile)) byMobile.set(p.mobile, []);
+    byMobile.get(p.mobile)!.push(p);
+  }
+  const suggestions: PatientSuggestion[] = [];
+  for (const [mobile, visits] of byMobile) {
+    const sorted = visits.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const latest = sorted[0];
+    suggestions.push({
+      name: latest.name, mobile, age: latest.age || 0,
+      ageMonths: latest.ageMonths || 0, weight: latest.weight || "",
+      address: latest.address || "", visitCount: sorted.length,
+      lastVisit: latest.visitDate, recentVisits: sorted.slice(0, 3),
+    });
+  }
+  return suggestions.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit)).slice(0, 8);
+}
+
+export interface FollowUpReminder {
+  patient: Patient;
+  followUpDate: string;
+  daysOverdue: number;
+}
+
+export function getFollowUpReminders(): FollowUpReminder[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const ayurvedicPatients = getPatients().filter(p => p.registerType === "ayurvedic");
+  const seen = new Set<string>();
+  const reminders: FollowUpReminder[] = [];
+  for (const p of ayurvedicPatients) {
+    const match = (p.advice || "").match(/f\s*(\d+)/i);
+    if (!match) continue;
+    const days = parseInt(match[1]);
+    if (!days || days <= 0) continue;
+    const visitDate = new Date(p.visitDate + "T00:00:00");
+    const followUp = new Date(visitDate);
+    followUp.setDate(followUp.getDate() + days);
+    const followUpStr = followUp.toISOString().slice(0, 10);
+    const diffMs = today.getTime() - followUp.getTime();
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < -3) continue;
+    const key = `${p.mobile}_${p.visitDate}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    reminders.push({ patient: p, followUpDate: followUpStr, daysOverdue: diffDays });
+  }
+  return reminders.sort((a, b) => a.followUpDate.localeCompare(b.followUpDate));
+}
+
+export interface DailyStats {
+  date: string;
+  totalPatients: number;
+  totalFees: number;
+  patients: Patient[];
+}
+
+export function getDailyStats(date: string): DailyStats {
+  const patients = getPatientsByDate(date);
+  return { date, totalPatients: patients.length, totalFees: patients.reduce((s, p) => s + (p.fees || 0), 0), patients };
+}
+
+export function getAyurvedicDailyStats(date: string): DailyStats {
+  const patients = getAyurvedicPatientsByDate(date);
+  return { date, totalPatients: patients.length, totalFees: patients.reduce((s, p) => s + (p.fees || 0), 0), patients };
+}
+
+export function getAllDates(): { date: string; count: number; totalFees: number }[] {
+  const patients = getPatients();
+  const map: Record<string, { count: number; totalFees: number }> = {};
+  for (const p of patients) {
+    if (!map[p.visitDate]) map[p.visitDate] = { count: 0, totalFees: 0 };
+    map[p.visitDate].count += 1;
+    map[p.visitDate].totalFees += p.fees || 0;
+  }
+  return Object.entries(map).map(([date, v]) => ({ date, ...v })).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function getAllAyurvedicDates(): { date: string; count: number; totalFees: number }[] {
+  const patients = getPatients().filter((p) => p.registerType === "ayurvedic");
+  const map: Record<string, { count: number; totalFees: number }> = {};
+  for (const p of patients) {
+    if (!map[p.visitDate]) map[p.visitDate] = { count: 0, totalFees: 0 };
+    map[p.visitDate].count += 1;
+    map[p.visitDate].totalFees += p.fees || 0;
+  }
+  return Object.entries(map).map(([date, v]) => ({ date, ...v })).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function getMonthlyStats(year: number, month: number) {
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const patients = getPatients().filter((p) => p.visitDate.startsWith(monthStr));
+  const totalFees = patients.reduce((sum, p) => sum + (p.fees || 0), 0);
+  const generalPatients = patients.filter(p => p.registerType !== "ayurvedic").length;
+  const ayurvedicPatients = patients.filter(p => p.registerType === "ayurvedic").length;
+  const generalFees = patients.filter(p => p.registerType !== "ayurvedic").reduce((s, p) => s + (p.fees || 0), 0);
+  const ayurvedicFees = patients.filter(p => p.registerType === "ayurvedic").reduce((s, p) => s + (p.fees || 0), 0);
+  const dayMap: Record<string, { count: number; totalFees: number; generalFees: number; ayurvedicFees: number }> = {};
+  for (const p of patients) {
+    if (!dayMap[p.visitDate]) dayMap[p.visitDate] = { count: 0, totalFees: 0, generalFees: 0, ayurvedicFees: 0 };
+    dayMap[p.visitDate].count += 1;
+    dayMap[p.visitDate].totalFees += p.fees || 0;
+    if (p.registerType === "ayurvedic") dayMap[p.visitDate].ayurvedicFees += p.fees || 0;
+    else dayMap[p.visitDate].generalFees += p.fees || 0;
+  }
+  const dailyBreakdown = Object.entries(dayMap).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date));
+  return { totalPatients: patients.length, totalFees, generalPatients, ayurvedicPatients, generalFees, ayurvedicFees, dailyBreakdown };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMPLAINT CODES
+// ═══════════════════════════════════════════════════════════════
+
+export function getComplaintCodes(): ComplaintCode[] {
+  try { return JSON.parse(localStorage.getItem(CODES_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function saveCodes(codes: ComplaintCode[]) {
+  localStorage.setItem(CODES_KEY, JSON.stringify(codes));
+}
+
+export function addComplaintCode(data: Omit<ComplaintCode, "id" | "createdAt">): ComplaintCode {
+  const codes = getComplaintCodes();
+  const code: ComplaintCode = { ...data, code: data.code.toUpperCase(), id: nextId(), createdAt: new Date().toISOString() };
+  codes.push(code);
+  saveCodes(codes);
+  return code;
+}
+
+export function updateComplaintCode(id: number, data: Partial<ComplaintCode>): ComplaintCode | null {
+  const codes = getComplaintCodes();
+  const idx = codes.findIndex((c) => c.id === id);
+  if (idx === -1) return null;
+  codes[idx] = { ...codes[idx], ...data, code: (data.code || codes[idx].code).toUpperCase() };
+  saveCodes(codes);
+  return codes[idx];
+}
+
+export function deleteComplaintCode(id: number): boolean {
+  const codes = getComplaintCodes();
+  const filtered = codes.filter((c) => c.id !== id);
+  saveCodes(filtered);
+  return filtered.length !== codes.length;
+}
+
+export function findComplaintCode(code: string): ComplaintCode | undefined {
+  return getComplaintCodes().find((c) => c.code === code.toUpperCase());
+}
+
+export function importComplaintCodes(jsonStr: string): { success: boolean; message: string } {
+  try {
+    const data = JSON.parse(jsonStr);
+    if (!Array.isArray(data)) return { success: false, message: "Invalid format. Expected an array of codes." };
+    const existing = getComplaintCodes();
+    let added = 0;
+    let counter = parseInt(localStorage.getItem(COUNTER_KEY) || "0");
+    for (const item of data) {
+      if (!item.code || !item.complaint || !item.treatment) continue;
+      const exists = existing.find((c) => c.code === item.code.toUpperCase());
+      if (!exists) {
+        counter++;
+        existing.push({ id: counter, code: item.code.toUpperCase(), complaint: item.complaint, treatment: item.treatment, createdAt: item.createdAt || new Date().toISOString() });
+        added++;
+      }
+    }
+    saveCodes(existing);
+    localStorage.setItem(COUNTER_KEY, String(counter));
+    return { success: true, message: `Imported ${added} new codes (duplicates skipped).` };
+  } catch { return { success: false, message: "Failed to parse codes file." }; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BACKUP / RESTORE
+// ═══════════════════════════════════════════════════════════════
+
+export function exportBackup(): string {
+  const data = {
+    version: 2,
+    app: "ClinicPro",
+    exportedAt: new Date().toISOString(),
+    patients: getPatients(),
+    complaintCodes: getComplaintCodes(),
+    medicines: getMedicines(),
+    purchaseBills: getPurchaseBills(),
+    medicineBills: getMedicineBills(),
+    doctors: getDoctors(),
+    idCounter: parseInt(localStorage.getItem(COUNTER_KEY) || "0"),
+  };
+  return JSON.stringify(data, null, 2);
+}
+
+export function importBackup(jsonStr: string): { success: boolean; message: string } {
+  try {
+    const data = JSON.parse(jsonStr);
+    if (!data.patients || !Array.isArray(data.patients)) return { success: false, message: "Invalid backup file format." };
+    savePatients(data.patients);
+    if (data.complaintCodes && Array.isArray(data.complaintCodes)) saveCodes(data.complaintCodes);
+    if (data.medicines && Array.isArray(data.medicines)) localStorage.setItem(MEDICINES_KEY, JSON.stringify(data.medicines));
+    if (data.purchaseBills && Array.isArray(data.purchaseBills)) localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(data.purchaseBills));
+    if (data.medicineBills && Array.isArray(data.medicineBills)) localStorage.setItem(MEDICINE_BILLS_KEY, JSON.stringify(data.medicineBills));
+    if (data.doctors && Array.isArray(data.doctors)) localStorage.setItem(DOCTORS_KEY, JSON.stringify(data.doctors));
+    if (data.idCounter) localStorage.setItem(COUNTER_KEY, String(data.idCounter));
+    return { success: true, message: `Restored ${data.patients.length} patients, ${data.medicines?.length || 0} medicines.` };
+  } catch { return { success: false, message: "Failed to parse backup file." }; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOCTORS
+// ═══════════════════════════════════════════════════════════════
+
+const DEFAULT_DOCTORS: Doctor[] = [
+  { id: 1, name: "Doctor 1", profitSharePct: 60 },
+  { id: 2, name: "Doctor 2", profitSharePct: 40 },
+];
+
+export function getDoctors(): Doctor[] {
+  try {
+    const stored = localStorage.getItem(DOCTORS_KEY);
+    return stored ? JSON.parse(stored) : DEFAULT_DOCTORS;
+  } catch { return DEFAULT_DOCTORS; }
+}
+
+export function saveDoctors(doctors: Doctor[]) {
+  localStorage.setItem(DOCTORS_KEY, JSON.stringify(doctors));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LANDING COST CALCULATOR
+// ═══════════════════════════════════════════════════════════════
+
+export function calcLandingCost(params: {
+  qtyPaid: number;
+  qtyFree: number;
+  ratePerUnit: number;
+  discountPct: number;
+  gstPct: number;
+  mrp: number;
+}): {
+  taxableAmount: number;
+  gstAmount: number;
+  totalPaid: number;
+  totalQtyReceived: number;
+  landingCostPerUnit: number;
+  profitPerUnit: number;
+  profitPct: number;
+} {
+  const { qtyPaid, qtyFree, ratePerUnit, discountPct, gstPct, mrp } = params;
+  const totalQtyReceived = qtyPaid + qtyFree;
+  const grossAmt = qtyPaid * ratePerUnit;
+  const discAmt = grossAmt * (discountPct / 100);
+  const taxableAmount = grossAmt - discAmt;
+  const gstAmount = taxableAmount * (gstPct / 100);
+  const totalPaid = taxableAmount + gstAmount;
+  const landingCostPerUnit = totalQtyReceived > 0 ? totalPaid / totalQtyReceived : 0;
+  const profitPerUnit = mrp - landingCostPerUnit;
+  const profitPct = mrp > 0 ? (profitPerUnit / mrp) * 100 : 0;
+  return { taxableAmount, gstAmount, totalPaid, totalQtyReceived, landingCostPerUnit, profitPerUnit, profitPct };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEDICINES (Item Master)
+// ═══════════════════════════════════════════════════════════════
+
+export function getMedicines(): MedicineItem[] {
+  try { return JSON.parse(localStorage.getItem(MEDICINES_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function saveMedicines(medicines: MedicineItem[]) {
+  localStorage.setItem(MEDICINES_KEY, JSON.stringify(medicines));
+}
+
+export function addMedicine(data: Omit<MedicineItem, "id" | "createdAt">): MedicineItem {
+  const medicines = getMedicines();
+  const medicine: MedicineItem = { ...data, id: nextId(), createdAt: new Date().toISOString() };
+  medicines.push(medicine);
+  saveMedicines(medicines);
+  return medicine;
+}
+
+export function updateMedicine(id: number, data: Partial<MedicineItem>): MedicineItem | null {
+  const medicines = getMedicines();
+  const idx = medicines.findIndex((m) => m.id === id);
+  if (idx === -1) return null;
+  medicines[idx] = { ...medicines[idx], ...data };
+  saveMedicines(medicines);
+  return medicines[idx];
+}
+
+export function deleteMedicine(id: number): boolean {
+  const medicines = getMedicines();
+  const filtered = medicines.filter((m) => m.id !== id);
+  saveMedicines(filtered);
+  return filtered.length !== medicines.length;
+}
+
+export function searchMedicines(query: string): MedicineItem[] {
+  if (!query || query.length < 1) return getMedicines();
+  const q = query.toLowerCase();
+  return getMedicines().filter(m => m.name.toLowerCase().includes(q));
+}
+
+// Stock status helpers
+export function getStockStatus(medicine: MedicineItem): "out" | "low" | "ok" {
+  if (medicine.currentStock <= 0) return "out";
+  if (medicine.currentStock <= medicine.reorderLevel) return "low";
+  return "ok";
+}
+
+export function getStockAlertCounts(): { out: number; low: number } {
+  const medicines = getMedicines();
+  return {
+    out: medicines.filter(m => m.currentStock <= 0).length,
+    low: medicines.filter(m => m.currentStock > 0 && m.currentStock <= m.reorderLevel).length,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PURCHASE BILLS
+// ═══════════════════════════════════════════════════════════════
+
+export function getPurchaseBills(): PurchaseBill[] {
+  try { return JSON.parse(localStorage.getItem(PURCHASE_BILLS_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function savePurchaseBills(bills: PurchaseBill[]) {
+  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+}
+
+export function addPurchaseBill(data: Omit<PurchaseBill, "id" | "createdAt">): PurchaseBill {
+  const bills = getPurchaseBills();
+  const bill: PurchaseBill = { ...data, id: nextId(), createdAt: new Date().toISOString() };
+  bills.push(bill);
+  savePurchaseBills(bills);
+
+  // Update stock and landing cost for each item
+  const medicines = getMedicines();
+  for (const item of data.items) {
+    const idx = medicines.findIndex(m => m.id === item.medicineId);
+    if (idx !== -1) {
+      const oldStock = medicines[idx].currentStock;
+      const oldCost = medicines[idx].landingCost;
+      const newStock = oldStock + item.totalQtyReceived;
+      // Weighted average landing cost
+      const newCost = newStock > 0
+        ? ((oldStock * oldCost) + (item.totalQtyReceived * item.landingCostPerUnit)) / newStock
+        : item.landingCostPerUnit;
+      medicines[idx].currentStock = newStock;
+      medicines[idx].landingCost = Math.round(newCost * 100) / 100;
+    }
+    // Add to stock ledger
+    addStockLedgerEntry({
+      medicineId: item.medicineId,
+      medicineName: item.medicineName,
+      type: "purchase",
+      qty: item.totalQtyReceived,
+      balanceAfter: medicines.find(m => m.id === item.medicineId)?.currentStock || 0,
+      refId: bill.id,
+      refNo: data.billNo,
+      date: data.billDate,
+    });
+  }
+  saveMedicines(medicines);
+  return bill;
+}
+
+export function deletePurchaseBill(id: number): boolean {
+  const bills = getPurchaseBills();
+  const bill = bills.find(b => b.id === id);
+  if (!bill) return false;
+
+  // Reverse stock changes
+  const medicines = getMedicines();
+  for (const item of bill.items) {
+    const idx = medicines.findIndex(m => m.id === item.medicineId);
+    if (idx !== -1) {
+      medicines[idx].currentStock = Math.max(0, medicines[idx].currentStock - item.totalQtyReceived);
+    }
+  }
+  saveMedicines(medicines);
+
+  const filtered = bills.filter(b => b.id !== id);
+  savePurchaseBills(filtered);
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEDICINE BILLS (Sales)
+// ═══════════════════════════════════════════════════════════════
+
+export function getMedicineBills(): MedicineBill[] {
+  try { return JSON.parse(localStorage.getItem(MEDICINE_BILLS_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function saveMedicineBills(bills: MedicineBill[]) {
+  localStorage.setItem(MEDICINE_BILLS_KEY, JSON.stringify(bills));
+}
+
+export function addMedicineBill(data: Omit<MedicineBill, "id" | "createdAt">): MedicineBill {
+  const bills = getMedicineBills();
+  const bill: MedicineBill = { ...data, id: nextId(), createdAt: new Date().toISOString() };
+  bills.push(bill);
+  saveMedicineBills(bills);
+
+  // Deduct stock for each item
+  const medicines = getMedicines();
+  for (const item of data.items) {
+    const idx = medicines.findIndex(m => m.id === item.medicineId);
+    if (idx !== -1) {
+      medicines[idx].currentStock = Math.max(0, medicines[idx].currentStock - item.qty);
+    }
+    addStockLedgerEntry({
+      medicineId: item.medicineId,
+      medicineName: item.medicineName,
+      type: "sale",
+      qty: -item.qty,
+      balanceAfter: medicines.find(m => m.id === item.medicineId)?.currentStock || 0,
+      refId: bill.id,
+      refNo: data.patientName,
+      date: data.billDate,
+    });
+  }
+  saveMedicines(medicines);
+  return bill;
+}
+
+export function getMedicineBillsByDate(date: string): MedicineBill[] {
+  return getMedicineBills().filter(b => b.billDate === date);
+}
+
+export function getMedicineBillsByMonth(year: number, month: number): MedicineBill[] {
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  return getMedicineBills().filter(b => b.billDate.startsWith(monthStr));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DAILY PROFIT REPORT
+// ═══════════════════════════════════════════════════════════════
+
+export interface DailyProfitReport {
+  date: string;
+  consultationFees: number;
+  medicineSales: number;
+  medicineCost: number;
+  medicineProfit: number;
+  totalPatients: number;
+  doctors: {
+    doctor: Doctor;
+    consultationShare: number;
+    medicineProfitShare: number;
+    total: number;
+  }[];
+  lowStockAlerts: { name: string; currentStock: number }[];
+}
+
+export function getDailyProfitReport(date: string): DailyProfitReport {
+  const patients = getPatientsByDate(date);
+  const consultationFees = patients.reduce((s, p) => s + (p.fees || 0), 0);
+
+  const medicineBills = getMedicineBillsByDate(date);
+  const medicineSales = medicineBills.reduce((s, b) => s + b.totalSale, 0);
+  const medicineCost = medicineBills.reduce((s, b) => s + b.totalCost, 0);
+  const medicineProfit = medicineBills.reduce((s, b) => s + b.totalProfit, 0);
+
+  const doctors = getDoctors();
+  const doctorBreakdown = doctors.map(doctor => {
+    const pct = doctor.profitSharePct / 100;
+    return {
+      doctor,
+      consultationShare: Math.round(consultationFees * pct * 100) / 100,
+      medicineProfitShare: Math.round(medicineProfit * pct * 100) / 100,
+      total: Math.round((consultationFees + medicineProfit) * pct * 100) / 100,
+    };
+  });
+
+  const lowStockAlerts = getMedicines()
+    .filter(m => m.currentStock > 0 && m.currentStock <= m.reorderLevel)
+    .map(m => ({ name: m.name, currentStock: m.currentStock }));
+
+  return {
+    date, consultationFees, medicineSales, medicineCost,
+    medicineProfit, totalPatients: patients.length,
+    doctors: doctorBreakdown, lowStockAlerts,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STOCK LEDGER
+// ═══════════════════════════════════════════════════════════════
+
+export function getStockLedger(): StockLedgerEntry[] {
+  try { return JSON.parse(localStorage.getItem(STOCK_LEDGER_KEY) || "[]"); }
+  catch { return []; }
+}
+
+export function getStockLedgerForMedicine(medicineId: number): StockLedgerEntry[] {
+  return getStockLedger().filter(e => e.medicineId === medicineId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function addStockLedgerEntry(data: Omit<StockLedgerEntry, "id" | "createdAt">) {
+  const ledger = getStockLedger();
+  ledger.push({ ...data, id: nextId(), createdAt: new Date().toISOString() });
+  localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(ledger));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STOCK VALUATION
+// ═══════════════════════════════════════════════════════════════
+
+export function getStockValuation(): { atCost: number; atMrp: number; potentialProfit: number } {
+  const medicines = getMedicines();
+  const atCost = medicines.reduce((s, m) => s + m.currentStock * m.landingCost, 0);
+  const atMrp = medicines.reduce((s, m) => s + m.currentStock * m.mrp, 0);
+  return { atCost: Math.round(atCost), atMrp: Math.round(atMrp), potentialProfit: Math.round(atMrp - atCost) };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EXPIRY TRACKING (per purchase bill item)
+// ═══════════════════════════════════════════════════════════════
+
+export interface ExpiryItem {
+  medicineName: string;
+  batchNo: string;
+  expiryDate: string;   // "MM/YY"
+  qty: number;
+  status: "expired" | "expiring-soon" | "expiring" | "good";
+  daysToExpiry: number;
+}
+
+export function getExpiryList(): ExpiryItem[] {
+  const today = new Date();
+  const items: ExpiryItem[] = [];
+  for (const bill of getPurchaseBills()) {
+    for (const item of bill.items) {
+      if (!item.expiryDate || !item.batchNo) continue;
+      const parts = item.expiryDate.split("/");
+      if (parts.length !== 2) continue;
+      const month = parseInt(parts[0]) - 1;
+      const year = parseInt(parts[1]) < 100 ? 2000 + parseInt(parts[1]) : parseInt(parts[1]);
+      const expiry = new Date(year, month + 1, 0); // last day of expiry month
+      const diffMs = expiry.getTime() - today.getTime();
+      const daysToExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      let status: ExpiryItem["status"] = "good";
+      if (daysToExpiry < 0) status = "expired";
+      else if (daysToExpiry <= 30) status = "expiring-soon";
+      else if (daysToExpiry <= 60) status = "expiring";
+      items.push({
+        medicineName: item.medicineName,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        qty: item.totalQtyReceived,
+        status,
+        daysToExpiry,
+      });
+    }
+  }
+  return items.sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WHATSAPP REPORT GENERATOR
+// ═══════════════════════════════════════════════════════════════
+
+export function generateWhatsAppReport(date: string): string {
+  const report = getDailyProfitReport(date);
+  const d = new Date(date + "T00:00:00");
+  const displayDate = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+
+  let text = `🏥 *Manglam Clinic Daily Report*\n`;
+  text += `📅 Date: ${displayDate}\n\n`;
+  text += `👥 Patients: ${report.totalPatients}\n`;
+  text += `💵 Consultation: ₹${report.consultationFees.toLocaleString("en-IN")}\n`;
+  text += `💊 Medicine Sales: ₹${report.medicineSales.toLocaleString("en-IN")}\n`;
+  text += `📦 Medicine Cost: ₹${report.medicineCost.toLocaleString("en-IN")}\n`;
+  text += `💰 Medicine Profit: ₹${report.medicineProfit.toLocaleString("en-IN")}\n\n`;
+
+  for (const d of report.doctors) {
+    text += `👨‍⚕️ *${d.doctor.name}* (${d.doctor.profitSharePct}%):\n`;
+    text += `   Consult: ₹${d.consultationShare.toLocaleString("en-IN")}\n`;
+    text += `   Med Profit: ₹${d.medicineProfitShare.toLocaleString("en-IN")}\n`;
+    text += `   *Total: ₹${d.total.toLocaleString("en-IN")}*\n\n`;
+  }
+
+  if (report.lowStockAlerts.length > 0) {
+    text += `⚠️ *LOW STOCK ALERT:*\n`;
+    for (const a of report.lowStockAlerts) {
+      text += `• ${a.name} — ${a.currentStock} units left\n`;
+    }
+  }
+
+  return text;
+}
