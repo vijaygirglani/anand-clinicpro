@@ -6,7 +6,8 @@ import { Layout } from "@/components/Layout";
 import {
   addPatient, lookupByMobile, lookupByName, findComplaintCode,
   getNextPatientNo, getNextCaseNo, lookupByComplaint, lookupByAddress,
-  searchPatientSuggestions,
+  searchPatientSuggestions, checkMedicineStock, deductMedicineStock,
+  getMedicineNamesFromPurchases, getMedicines,
   type Patient, type PatientSuggestion,
 } from "@/lib/store";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
@@ -43,6 +44,7 @@ function removeLooseSale(id: string) {
 }
 function genSaleId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 import { useToast } from "@/hooks/use-toast";
+import { getActiveDoctor } from "@/lib/settings";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -260,6 +262,20 @@ export default function Home() {
   const [showNameDropdown, setShowNameDropdown] = useState(false);
   const [pendingFees, setPendingFees] = useState<PendingEntry[]>(() => getPendingFees());
   const [feesMarkedPending, setFeesMarkedPending] = useState(false);
+
+  // ── Medicine Table state ──
+  interface MedRow { medicineName: string; qty: number; mrp: number; }
+  const [medRows, setMedRows] = useState<MedRow[]>([]);
+  const [otherCharges, setOtherCharges] = useState<number>(0);
+  const medGross = medRows.reduce((s, r) => s + r.mrp * r.qty, 0);
+  const billAmount = medGross + otherCharges;
+  const medNames = getMedicineNamesFromPurchases();
+  const activeDoctor = getActiveDoctor();
+
+  const addMedRow = () => setMedRows(p => [...p, { medicineName: "", qty: 1, mrp: 0 }]);
+  const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
+    setMedRows(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
+  const removeMedRow = (i: number) => setMedRows(p => p.filter((_, idx) => idx !== i));
   const refreshPending = () => setPendingFees(getPendingFees());
 
   // ── Loose Medicine Sales state ──
@@ -347,6 +363,15 @@ export default function Home() {
       if (codeRecord) {
         form.setValue("complaint", codeRecord.complaint);
         form.setValue("treatment", codeRecord.treatment);
+        // Auto-fill medicine rows from complaint code template
+        if (codeRecord.medicines && codeRecord.medicines.length > 0) {
+          setMedRows(codeRecord.medicines.map(m => ({
+            medicineName: m.medicineName,
+            qty: m.defaultQty,
+            mrp: m.mrp || 0,
+          })));
+          // Auto-calc other charges = 0, bill amount = gross
+        }
       }
     }
   }, [complaintCodeValue, form]);
@@ -527,16 +552,43 @@ export default function Home() {
 
   const savePatient = (data: PatientFormValues, registerType: "general" | "ayurvedic") => {
     const visitDate = data.visitDate || todayStr;
+
+    // Stock check before saving
+    const validMedRows = medRows.filter(r => r.medicineName.trim() && r.qty > 0);
+    if (validMedRows.length > 0) {
+      const stockCheck = checkMedicineStock(validMedRows.map(r => ({ medicineName: r.medicineName, qty: r.qty })));
+      if (!stockCheck.ok) {
+        stockCheck.errors.forEach(e => {
+          toast({ title: `Insufficient stock: ${e.medicineName}`, description: `Required: ${e.required}, Available: ${e.available}`, variant: "destructive" });
+        });
+        return;
+      }
+    }
+
     const autoPatientNo = getNextPatientNo(visitDate);
+    // Auto-fill fees from bill amount if medicines added
+    const finalFees = validMedRows.length > 0 ? billAmount : Number(data.fees || 0);
     const saved = addPatient({
       name: data.name, mobile: data.mobile, patientNo: autoPatientNo,
       age: data.age || 0, ageMonths: data.ageMonths || 0,
       weight: data.weight || "", address: data.address || "",
       complaintCode: data.complaintCode || "", complaint: data.complaint || "",
       treatment: data.treatment || "", advice: data.advice || "",
-      reports: data.reports || "", fees: Number(data.fees || 0),
+      reports: data.reports || "", fees: finalFees, doctorId: activeDoctor?.id || 1,
       attachments, registerType, visitDate,
     });
+    // Deduct medicine stock
+    if (validMedRows.length > 0) {
+      const medicines = getMedicines();
+      deductMedicineStock(
+        validMedRows.map(r => {
+          const med = medicines.find(m => m.name.toLowerCase() === r.medicineName.toLowerCase());
+          return { medicineName: r.medicineName, qty: r.qty, mrp: r.mrp, landingCost: med?.landingCost || 0 };
+        }),
+        saved.name, visitDate
+      );
+    }
+
     if (feesMarkedPending && saved.fees > 0) {
       addPendingFee({ patientId: saved.id, name: saved.name, mobile: saved.mobile, fees: saved.fees, date: visitDate, markedAt: new Date().toISOString() });
       refreshPending();
@@ -554,6 +606,8 @@ export default function Home() {
     setPatientHistory([]);
     setHistoryName("");
     setHistoryMobile("");
+    setMedRows([]);
+    setOtherCharges(0);
     setSelectedPADisease(null);
     setPaMatches([]);
     setShowPAPanel(false);
@@ -778,10 +832,18 @@ export default function Home() {
                       placeholder="E.G. CCF" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Consultation Fees (₹)</label>
+                    <label className="text-sm font-semibold text-slate-700">
+                      Bill Amount (₹)
+                      {medRows.length > 0 && <span className="ml-2 text-xs text-green-600 font-normal">auto from medicines</span>}
+                    </label>
                     <div className="flex gap-2 items-center">
-                      <input type="number" {...form.register("fees")} min={0}
-                        className="flex-1 px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-semibold text-slate-900" placeholder="Amount" />
+                      <input type="number"
+                        value={medRows.length > 0 ? billAmount : undefined}
+                        readOnly={medRows.length > 0}
+                        {...(medRows.length === 0 ? form.register("fees") : {})}
+                        min={0}
+                        className={`flex-1 px-4 py-3 rounded-xl border focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-semibold text-slate-900 ${medRows.length > 0 ? "bg-green-50 border-green-300 cursor-not-allowed" : "bg-white border-slate-200"}`}
+                        placeholder="Amount" />
                       <button type="button"
                         onClick={() => setFeesMarkedPending(p => !p)}
                         title={feesMarkedPending ? "Click to unmark pending" : "Mark fees as pending"}
@@ -992,6 +1054,95 @@ export default function Home() {
                   <textarea {...form.register("treatment")} rows={2}
                     className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Prescribed medicines..." />
                 </div>
+                {/* ── Medicine Table ── */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      💊 Medicines
+                      {medRows.length > 0 && (
+                        <span className="text-xs text-green-600 font-normal">
+                          Gross: ₹{medGross.toFixed(2)}
+                        </span>
+                      )}
+                    </label>
+                    <button type="button" onClick={addMedRow}
+                      className="text-xs text-primary font-medium hover:underline flex items-center gap-1">
+                      + Add Medicine
+                    </button>
+                  </div>
+                  {medRows.length > 0 && (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-slate-500 font-semibold w-6">#</th>
+                            <th className="px-2 py-2 text-left text-slate-500 font-semibold">Medicine</th>
+                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-20">Qty</th>
+                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-24">MRP (₹)</th>
+                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-24">Amount</th>
+                            <th className="px-2 py-2 w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {medRows.map((r, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="px-3 py-1.5 text-slate-400">{i + 1}</td>
+                              <td className="px-2 py-1.5">
+                                <input value={r.medicineName}
+                                  onChange={e => {
+                                    updateMedRow(i, "medicineName", e.target.value);
+                                    // Auto-fill MRP from medicines
+                                    const med = getMedicines().find(m => m.name.toLowerCase() === e.target.value.toLowerCase());
+                                    if (med) updateMedRow(i, "mrp", med.mrp);
+                                  }}
+                                  list="home-med-names"
+                                  placeholder="Medicine name..."
+                                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                                <datalist id="home-med-names">
+                                  {medNames.map(n => <option key={n} value={n} />)}
+                                </datalist>
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <input type="number" value={r.qty} min={1}
+                                  onChange={e => updateMedRow(i, "qty", Number(e.target.value))}
+                                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <input type="number" step="0.01" value={r.mrp || ""}
+                                  onChange={e => updateMedRow(i, "mrp", Number(e.target.value))}
+                                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-semibold text-slate-800">
+                                ₹{(r.mrp * r.qty).toFixed(2)}
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <button type="button" onClick={() => removeMedRow(i)}
+                                  className="text-red-400 hover:text-red-600">✕</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {/* Summary row */}
+                      <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-slate-600">Gross: <strong>₹{medGross.toFixed(2)}</strong></span>
+                          <span className="text-slate-400">|</span>
+                          <label className="text-slate-600 whitespace-nowrap">Other Charges:</label>
+                          <input type="number" value={otherCharges}
+                            onChange={e => setOtherCharges(Number(e.target.value))}
+                            className="w-24 border border-slate-300 rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50"
+                            placeholder="-50 or +100" />
+                          <span className="text-xs text-slate-400">(- = discount, + = extra)</span>
+                        </div>
+                        <div className="text-sm font-bold text-primary whitespace-nowrap">
+                          Bill: ₹{billAmount.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">

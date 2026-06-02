@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   UserPlus, BookOpen, Leaf, Code2, BookMarked,
-  Package, ShoppingCart, Receipt, BarChart3, Pill,
+  Package, ShoppingCart, BarChart3, Pill,
   Settings, Menu, X, ChevronDown, LogOut,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
@@ -17,9 +17,7 @@ const CLINIC_NAV = [
 ];
 
 const INVENTORY_NAV = [
-  { to: "/medicines",        label: "Medicine Master",  icon: Pill         },
   { to: "/purchase-bills",   label: "Purchase Bills",   icon: ShoppingCart },
-  { to: "/medicine-billing", label: "Medicine Billing", icon: Receipt      },
   { to: "/stock-status",     label: "Stock & Expiry",   icon: Package      },
 ];
 

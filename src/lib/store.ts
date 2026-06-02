@@ -28,11 +28,18 @@ export interface Patient {
   createdAt: string;
 }
 
+export interface ComplaintCodeMedicine {
+  medicineName: string;
+  defaultQty: number;
+  mrp: number;
+}
+
 export interface ComplaintCode {
   id: number;
   code: string;
   complaint: string;
   treatment: string;
+  medicines?: ComplaintCodeMedicine[];
   createdAt: string;
 }
 
@@ -802,6 +809,130 @@ export function getStockValuation(): { atCost: number; atMrp: number; potentialP
   const atMrp = medicines.reduce((s, m) => s + m.currentStock * m.mrp, 0);
   return { atCost: Math.round(atCost), atMrp: Math.round(atMrp), potentialProfit: Math.round(atMrp - atCost) };
 }
+
+// ═══════════════════════════════════════════════════════════════
+// FIFO BATCH LOOKUP
+// ═══════════════════════════════════════════════════════════════
+
+export interface FifoBatch {
+  batchNo: string;
+  expiryDate: string;
+  mrp: number;
+  availableQty: number;
+  landingCost: number;
+  purchaseBillId: number;
+}
+
+// Get oldest batch first for a medicine (FIFO)
+export function getFifoBatches(medicineName: string): FifoBatch[] {
+  const result: FifoBatch[] = [];
+  const bills = getPurchaseBills().sort((a, b) => a.billDate.localeCompare(b.billDate));
+  
+  for (const bill of bills) {
+    for (const item of bill.items) {
+      if (item.medicineName.toLowerCase() === medicineName.toLowerCase()) {
+        result.push({
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          mrp: item.mrp,
+          availableQty: item.totalQtyReceived,
+          landingCost: item.landingCostPerUnit,
+          purchaseBillId: bill.id,
+        });
+      }
+    }
+  }
+  return result;
+}
+
+// Get medicine MRP from latest purchase bill
+export function getMedicineMrpFromPurchase(medicineName: string): number {
+  const bills = getPurchaseBills().sort((a, b) => b.billDate.localeCompare(a.billDate));
+  for (const bill of bills) {
+    for (const item of bill.items) {
+      if (item.medicineName.toLowerCase() === medicineName.toLowerCase()) {
+        return item.mrp;
+      }
+    }
+  }
+  return 0;
+}
+
+// Get all unique medicine names from purchase bills (for autocomplete)
+export function getMedicineNamesFromPurchases(): string[] {
+  const names = new Set<string>();
+  for (const bill of getPurchaseBills()) {
+    for (const item of bill.items) {
+      names.add(item.medicineName);
+    }
+  }
+  return Array.from(names).sort();
+}
+
+// Check stock for a list of medicines before saving patient
+export interface StockCheckResult {
+  ok: boolean;
+  errors: { medicineName: string; required: number; available: number }[];
+}
+
+export function checkMedicineStock(items: { medicineName: string; qty: number }[]): StockCheckResult {
+  const errors: { medicineName: string; required: number; available: number }[] = [];
+  const medicines = getMedicines();
+  
+  for (const item of items) {
+    const med = medicines.find(m => m.name.toLowerCase() === item.medicineName.toLowerCase());
+    const available = med?.currentStock || 0;
+    if (available < item.qty) {
+      errors.push({ medicineName: item.medicineName, required: item.qty, available });
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+// Deduct stock for medicines when patient bill is saved
+export function deductMedicineStock(items: { medicineName: string; qty: number; mrp: number; landingCost: number }[], patientName: string, date: string) {
+  const medicines = getMedicines();
+  
+  for (const item of items) {
+    let med = medicines.find(m => m.name.toLowerCase() === item.medicineName.toLowerCase());
+    
+    // Auto-create medicine if not exists
+    if (!med) {
+      const newMed: MedicineItem = {
+        id: nextId(),
+        name: item.medicineName,
+        mrp: item.mrp,
+        reorderLevel: 5,
+        currentStock: 0,
+        landingCost: item.landingCost,
+        createdAt: new Date().toISOString(),
+      };
+      medicines.push(newMed);
+      med = newMed;
+    }
+    
+    const prevStock = med.currentStock;
+    med.currentStock = Math.max(0, med.currentStock - item.qty);
+    
+    // Add ledger entry
+    const ledger = getStockLedger();
+    ledger.push({
+      id: nextId(),
+      medicineId: med.id,
+      medicineName: item.medicineName,
+      type: "sale",
+      qty: -item.qty,
+      balanceAfter: med.currentStock,
+      refNo: patientName,
+      date,
+      createdAt: new Date().toISOString(),
+    });
+    localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(ledger));
+  }
+  
+  saveMedicines(medicines);
+}
+
 
 // ═══════════════════════════════════════════════════════════════
 // EXPIRY TRACKING (per purchase bill item)
