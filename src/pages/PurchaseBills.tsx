@@ -6,7 +6,7 @@ import {
   type PurchaseBill, type PurchaseBillItem,
 } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X } from "lucide-react";
+import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X, Pencil } from "lucide-react";
 import { format } from "date-fns";
 
 interface RowDraft {
@@ -33,6 +33,7 @@ export default function PurchaseBills() {
   );
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [editBillId, setEditBillId] = useState<number | null>(null);
 
   // Form
   const [supplier, setSupplier] = useState("");
@@ -83,11 +84,36 @@ export default function PurchaseBills() {
       };
     });
 
+    if (editBillId !== null) {
+      // Delete old bill (reverses stock) then save new
+      deletePurchaseBill(editBillId);
+      setEditBillId(null);
+    }
     addPurchaseBill({ supplierName: supplier, billNo, billDate, items, grandTotal });
-    toast({ title: "Purchase bill saved", description: `₹${grandTotal.toFixed(2)} — ${items.length} items` });
+    toast({ title: editBillId !== null ? "Bill updated" : "Purchase bill saved", description: `₹${grandTotal.toFixed(2)} — ${items.length} items` });
     setShowForm(false);
     setSupplier(""); setBillNo(""); setBillDate(format(new Date(), "yyyy-MM-dd")); setRows([emptyRow()]);
     refresh();
+  };
+
+  const handleEdit = (bill: PurchaseBill) => {
+    setEditBillId(bill.id);
+    setSupplier(bill.supplierName);
+    setBillNo(bill.billNo);
+    setBillDate(bill.billDate);
+    setRows(bill.items.map(item => ({
+      medicineName: item.medicineName,
+      mrp: item.mrp,
+      batchNo: item.batchNo,
+      expiryDate: item.expiryDate,
+      qtyPaid: item.qtyPaid,
+      qtyFree: item.qtyFree,
+      ratePerUnit: item.ratePerUnit,
+      discountPct: item.discountPct,
+      gstPct: item.gstPct,
+    })));
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const inputCls = "w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white";
@@ -106,7 +132,7 @@ export default function PurchaseBills() {
               <p className="text-sm text-slate-500">{bills.length} bills recorded</p>
             </div>
           </div>
-          <button onClick={() => { setShowForm(s => !s); }}
+          <button onClick={() => { setShowForm(s => !s); if (showForm) { setEditBillId(null); setSupplier(""); setBillNo(""); setBillDate(format(new Date(), "yyyy-MM-dd")); setRows([emptyRow()]); } }}
             className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
             {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             {showForm ? "Cancel" : "New Bill"}
@@ -205,7 +231,7 @@ export default function PurchaseBills() {
                 </div>
                 <button onClick={handleSave}
                   className="flex items-center gap-2 bg-primary text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors">
-                  <Save className="w-4 h-4" /> Save Bill
+                  {editBillId ? <><Save className="w-4 h-4" /> Update Bill</> : <><Save className="w-4 h-4" /> Save Bill</>}
                 </button>
               </div>
             </div>
@@ -229,6 +255,8 @@ export default function PurchaseBills() {
                 </div>
                 <div className="flex items-center gap-4">
                   <p className="font-bold text-slate-900">₹{bill.grandTotal.toFixed(2)}</p>
+                  <button onClick={e => { e.stopPropagation(); handleEdit(bill); }}
+                    className="text-blue-400 hover:text-blue-600 p-1" title="Edit bill"><Pencil className="w-4 h-4" /></button>
                   <button onClick={e => { e.stopPropagation(); if (confirm("Delete bill? Stock will be reversed.")) { deletePurchaseBill(bill.id); refresh(); } }}
                     className="text-red-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button>
                   {expanded === bill.id ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
