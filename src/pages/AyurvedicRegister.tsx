@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
 import {
-  getAyurvedicDailyStats, updatePatient, deletePatient, getAllAyurvedicDates,
+  getAyurvedicDailyStats, updatePatient, deletePatient, restoreStockForPatient, getAllAyurvedicDates,
   getFollowUpReminders,
   type Patient, type DailyStats, type FollowUpReminder,
 } from "@/lib/store";

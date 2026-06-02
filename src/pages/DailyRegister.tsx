@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
 import {
-  getDailyStats, updatePatient, deletePatient, getAllDates,
+  getDailyStats, updatePatient, deletePatient, getAllDates, restoreStockForPatient,
   exportBackup, importBackup, addPatient, getMonthlyStats,
   type Patient, type DailyStats,
 } from "@/lib/store";
@@ -165,9 +165,10 @@ export default function DailyRegister() {
   };
 
   const handleDelete = (id: number) => {
-    if (!confirm("Delete this record?")) return;
+    if (!confirm("Delete this record? Medicine stock will be restored.")) return;
+    restoreStockForPatient(id); // restore medicine stock first
     deletePatient(id);
-    toast({ title: "Deleted" }); refresh();
+    toast({ title: "Deleted — stock restored" }); refresh();
   };
 
   const exportMonthlyReport = () => {

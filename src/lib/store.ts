@@ -1076,3 +1076,18 @@ export function runMigrations() {
   }
   saveMedicines(medicines);
 }
+
+export function restoreStockForPatient(patientId: number) {
+  const medBills = getMedicineBills().filter(b => b.patientId === patientId);
+  if (medBills.length === 0) return;
+  const medicines = getMedicines();
+  for (const bill of medBills) {
+    for (const item of bill.items) {
+      const idx = medicines.findIndex(m => m.name.toLowerCase() === item.medicineName.toLowerCase() || m.id === item.medicineId);
+      if (idx !== -1) medicines[idx].currentStock += item.qty;
+    }
+  }
+  saveMedicines(medicines);
+  const remaining = getMedicineBills().filter(b => b.patientId !== patientId);
+  localStorage.setItem(MEDICINE_BILLS_KEY, JSON.stringify(remaining));
+}
