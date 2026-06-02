@@ -612,7 +612,11 @@ export function addPurchaseBill(data: Omit<PurchaseBill, "id" | "createdAt">): P
   // Update stock and landing cost for each item
   const medicines = getMedicines();
   for (const item of data.items) {
-    const idx = medicines.findIndex(m => m.id === item.medicineId);
+    // Match by name (case-insensitive) since medicineId may be 0 for new medicines
+    const idx = medicines.findIndex(m => 
+      m.name.toLowerCase() === item.medicineName.toLowerCase() ||
+      (item.medicineId > 0 && m.id === item.medicineId)
+    );
     if (idx !== -1) {
       const oldStock = medicines[idx].currentStock;
       const oldCost = medicines[idx].landingCost;

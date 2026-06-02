@@ -63,16 +63,18 @@ export default function PurchaseBills() {
 
     const items: PurchaseBillItem[] = valid.map(r => {
       const c = calcLandingCost({ qtyPaid: r.qtyPaid, qtyFree: r.qtyFree, ratePerUnit: r.ratePerUnit, discountPct: r.discountPct, gstPct: r.gstPct, mrp: r.mrp });
-      // Auto-create or update medicine in master
+      // Auto-create medicine in master if not exists (stock will be updated by addPurchaseBill)
       const medicines = getMedicines();
       const existing = medicines.find(m => m.name.toLowerCase() === r.medicineName.trim().toLowerCase());
       if (!existing) {
         addMedicine({ name: r.medicineName.trim(), mrp: r.mrp, reorderLevel: 5, currentStock: 0, landingCost: c.landingCostPerUnit });
       } else {
-        updateMedicine(existing.id, { mrp: r.mrp });
+        updateMedicine(existing.id, { mrp: r.mrp, landingCost: c.landingCostPerUnit });
       }
+      // Refresh medicines to get the id
+      const freshMed = getMedicines().find(m => m.name.toLowerCase() === r.medicineName.trim().toLowerCase());
       return {
-        medicineId: existing?.id || 0,
+        medicineId: freshMed?.id || 0,
         medicineName: r.medicineName.trim(),
         mrp: r.mrp, batchNo: r.batchNo, expiryDate: r.expiryDate,
         qtyPaid: r.qtyPaid, qtyFree: r.qtyFree, ratePerUnit: r.ratePerUnit,
@@ -162,10 +164,7 @@ export default function PurchaseBills() {
                         <td className="px-3 py-1.5 text-slate-400">{i + 1}</td>
                         <td className="px-2 py-1.5">
                           <input value={r.medicineName} onChange={e => updateRow(i, "medicineName", e.target.value)}
-                            placeholder="Medicine name" list="med-names" className={inputCls} />
-                          <datalist id="med-names">
-                            {getMedicines().map(m => <option key={m.id} value={m.name} />)}
-                          </datalist>
+                            placeholder="Medicine name" className={inputCls} autoComplete="off" />
                         </td>
                         <td className="px-2 py-1.5"><input value={r.batchNo} onChange={e => updateRow(i, "batchNo", e.target.value)} placeholder="Batch" className={inputCls} /></td>
                         <td className="px-2 py-1.5"><input value={r.expiryDate} onChange={e => updateRow(i, "expiryDate", e.target.value)} placeholder="MM/YY" className={inputCls} /></td>

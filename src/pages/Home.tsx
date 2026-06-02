@@ -1050,7 +1050,7 @@ export default function Home() {
                   )}
                 </AnimatePresence>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700">Treatment Plan</label>
+                  <label className="text-sm font-semibold text-slate-700">Treatment / Medicines</label>
                   <textarea {...form.register("treatment")} rows={2}
                     className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Prescribed medicines..." />
                 </div>
@@ -1091,16 +1091,13 @@ export default function Home() {
                                 <input value={r.medicineName}
                                   onChange={e => {
                                     updateMedRow(i, "medicineName", e.target.value);
-                                    // Auto-fill MRP from medicines
+                                    // Auto-fill MRP from medicines master
                                     const med = getMedicines().find(m => m.name.toLowerCase() === e.target.value.toLowerCase());
                                     if (med) updateMedRow(i, "mrp", med.mrp);
                                   }}
-                                  list="home-med-names"
                                   placeholder="Medicine name..."
+                                  autoComplete="off"
                                   className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                                <datalist id="home-med-names">
-                                  {medNames.map(n => <option key={n} value={n} />)}
-                                </datalist>
                               </td>
                               <td className="px-2 py-1.5">
                                 <input type="number" value={r.qty} min={1}
