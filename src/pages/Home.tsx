@@ -1070,37 +1070,32 @@ export default function Home() {
 
                 {/* ── Medicine Table ── */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  {/* Medicine Table Header */}
+                  <div className="flex items-center justify-between mb-1">
                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       💊 Medicines
-                      {medRows.length > 0 && (
-                        <span className="text-xs text-green-600 font-normal">
-                          Gross: ₹{medGross.toFixed(2)}
-                        </span>
-                      )}
+                      {medGross > 0 && <span className="text-xs text-green-600 font-normal">Gross: ₹{medGross.toFixed(2)}</span>}
                     </label>
-                    <button type="button" onClick={addMedRow}
-                      className="text-xs text-primary font-medium hover:underline flex items-center gap-1">
-                      + Add Medicine
-                    </button>
                   </div>
-                  <div className="border border-slate-200 rounded-xl">
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-50 border-b border-slate-200">
-                          <tr>
-                            <th className="px-3 py-2 text-left text-slate-500 font-semibold w-6">#</th>
-                            <th className="px-2 py-2 text-left text-slate-500 font-semibold">Medicine</th>
-                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-20">Qty</th>
-                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-28">MRP/Tab (₹)</th>
-                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-24">Amount</th>
-                            <th className="px-2 py-2 w-8"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {medRows.map((r, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="px-3 py-1.5 text-slate-400">{i + 1}</td>
-                              <td className="px-2 py-1.5">
+
+                  {/* Visual Infosoft style table */}
+                  <div className="rounded-xl overflow-visible border border-slate-300 shadow-sm">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-slate-700 text-white">
+                          <th className="px-3 py-2 text-left font-semibold text-xs w-8">No</th>
+                          <th className="px-2 py-2 text-left font-semibold text-xs">Item Name</th>
+                          <th className="px-2 py-2 text-right font-semibold text-xs w-16">Qty</th>
+                          <th className="px-2 py-2 text-right font-semibold text-xs w-24">MRP/Tab</th>
+                          <th className="px-2 py-2 text-right font-semibold text-xs w-24">Amount</th>
+                          <th className="px-2 py-2 w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {medRows.map((r, i) => (
+                            <tr key={i} className={`border-b border-slate-200 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"} hover:bg-blue-50/40 transition-colors`}>
+                              <td className="px-3 py-1 text-slate-500 text-xs font-medium">{i + 1}</td>
+                              <td className="px-2 py-1">
                                 <div className="relative">
                                   <input value={r.medicineName}
                                     onChange={e => {
@@ -1158,20 +1153,21 @@ export default function Home() {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-2 py-1.5">
+                              <td className="px-2 py-1">
                                 <input type="number" value={r.qty} min={1}
                                   onChange={e => updateMedRow(i, "qty", Number(e.target.value))}
-                                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                                  className="w-16 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white" />
                               </td>
-                              <td className="px-2 py-1.5">
+                              <td className="px-2 py-1">
                                 <input type="number" step="0.01" value={r.mrp || ""}
                                   onChange={e => updateMedRow(i, "mrp", Number(e.target.value))}
-                                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                                  placeholder="0.00"
+                                  className="w-20 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white" />
                               </td>
-                              <td className="px-2 py-1.5 text-right font-semibold text-slate-800">
-                                ₹{(r.mrp * r.qty).toFixed(2)}
+                              <td className="px-2 py-1 text-right font-bold text-slate-800 text-xs">
+                                {r.mrp > 0 ? `₹${(r.mrp * r.qty).toFixed(2)}` : "—"}
                               </td>
-                              <td className="px-2 py-1.5 text-center">
+                              <td className="px-2 py-1 text-center">
                                 <button type="button" onClick={() => removeMedRow(i)}
                                   className="text-red-400 hover:text-red-600">✕</button>
                               </td>
@@ -1182,16 +1178,16 @@ export default function Home() {
                       {/* Summary row */}
                       <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 text-xs">
-                          <span className="text-slate-600">Gross: <strong>₹{medGross.toFixed(2)}</strong></span>
-                          <span className="text-slate-400">|</span>
-                          <label className="text-slate-600 whitespace-nowrap">Other Charges:</label>
+                          <span className="text-white/80">Gross: <strong className="text-white">₹{medGross.toFixed(2)}</strong></span>
+                          <span className="text-white/40">|</span>
+                          <label className="text-white/80 whitespace-nowrap">Other Charges:</label>
                           <input type="number" value={otherCharges}
                             onChange={e => setOtherCharges(Number(e.target.value))}
-                            className="w-24 border border-slate-300 rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50"
+                            className="w-24 border border-white/30 rounded px-2 py-1 text-xs text-right focus:outline-none bg-white/10 text-white placeholder-white/40"
                             placeholder="-50 or +100" />
-                          <span className="text-xs text-slate-400">(- = discount, + = extra)</span>
+                          <span className="text-xs text-white/50">(- disc, + extra)</span>
                         </div>
-                        <div className="text-sm font-bold text-primary whitespace-nowrap">
+                        <div className="text-base font-bold text-white whitespace-nowrap">
                           Bill: ₹{billAmount.toFixed(2)}
                         </div>
                       </div>
