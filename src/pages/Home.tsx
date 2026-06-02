@@ -1173,6 +1173,15 @@ export default function Home() {
                               </td>
                             </tr>
                           ))}
+                          {/* Empty row — always visible for adding new medicine */}
+                          <tr className="border-b border-slate-200 bg-white hover:bg-blue-50/40 cursor-pointer" onClick={addMedRow}>
+                            <td className="px-3 py-2 text-slate-300 text-xs">{medRows.length + 1}</td>
+                            <td className="px-2 py-2" colSpan={3}>
+                              <span className="text-slate-400 text-xs">+ Click to add medicine...</span>
+                            </td>
+                            <td className="px-2 py-2 text-right text-slate-300 text-xs">—</td>
+                            <td></td>
+                          </tr>
                         </tbody>
                       </table>
                       {/* Summary row */}
