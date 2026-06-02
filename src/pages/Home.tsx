@@ -272,7 +272,19 @@ export default function Home() {
   const medNames = getMedicineNamesFromPurchases();
   const activeDoctor = getActiveDoctor();
 
+  const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number}[]>([]);
+  const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
+
   const addMedRow = () => setMedRows(p => [...p, { medicineName: "", qty: 1, mrp: 0 }]);
+
+  const getMedSuggestions = (query: string) => {
+    if (!query || query.length < 2) return [];
+    const q = query.toLowerCase();
+    return getMedicines()
+      .filter(m => m.name.toLowerCase().includes(q))
+      .map(m => ({ name: m.name, mrpPerTablet: m.mrpPerTablet || m.mrp, currentStock: m.currentStock }))
+      .slice(0, 8);
+  };
   const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
     setMedRows(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const removeMedRow = (i: number) => setMedRows(p => p.filter((_, idx) => idx !== i));
@@ -1087,17 +1099,42 @@ export default function Home() {
                             <tr key={i} className="hover:bg-slate-50/50">
                               <td className="px-3 py-1.5 text-slate-400">{i + 1}</td>
                               <td className="px-2 py-1.5">
-                                <input value={r.medicineName}
-                                  onChange={e => {
-                                    updateMedRow(i, "medicineName", e.target.value);
-                                    // Auto-fill MRP from medicines master
-                                    const med = getMedicines().find(m => m.name.toLowerCase() === e.target.value.toLowerCase());
-                                    // Use per-tablet MRP for billing
-                                    if (med) updateMedRow(i, "mrp", med.mrpPerTablet || med.mrp);
-                                  }}
-                                  placeholder="Medicine name..."
-                                  autoComplete="off"
-                                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                                <div className="relative">
+                                  <input value={r.medicineName}
+                                    onChange={e => {
+                                      updateMedRow(i, "medicineName", e.target.value);
+                                      updateMedRow(i, "mrp", 0);
+                                      setActiveMedIdx(i);
+                                      setMedSuggestions(getMedSuggestions(e.target.value));
+                                    }}
+                                    onFocus={() => {
+                                      setActiveMedIdx(i);
+                                      setMedSuggestions(getMedSuggestions(r.medicineName));
+                                    }}
+                                    onBlur={() => setTimeout(() => setMedSuggestions([]), 200)}
+                                    placeholder="Type medicine name..."
+                                    autoComplete="off"
+                                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                                  {activeMedIdx === i && medSuggestions.length > 0 && (
+                                    <div className="absolute top-full left-0 z-50 w-full bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 overflow-hidden">
+                                      {medSuggestions.map((s, si) => (
+                                        <button key={si} type="button"
+                                          onMouseDown={() => {
+                                            updateMedRow(i, "medicineName", s.name);
+                                            updateMedRow(i, "mrp", s.mrpPerTablet);
+                                            setMedSuggestions([]);
+                                            setActiveMedIdx(null);
+                                          }}
+                                          className="w-full text-left px-3 py-2 text-xs hover:bg-primary/10 flex items-center justify-between gap-2 border-b border-slate-50 last:border-0">
+                                          <span className="font-medium text-slate-800">{s.name}</span>
+                                          <span className="text-slate-500 shrink-0">
+                                            ₹{s.mrpPerTablet.toFixed(2)}/tab · {s.currentStock} tabs
+                                          </span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-2 py-1.5">
                                 <input type="number" value={r.qty} min={1}
