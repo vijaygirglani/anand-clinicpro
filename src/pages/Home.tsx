@@ -297,6 +297,8 @@ export default function Home() {
   const [looseSales, setLooseSales]         = useState<LooseSaleEntry[]>(() => getLooseSales(getLiveToday()));
   const [looseProduct, setLooseProduct]     = useState("");
   const [looseAmount, setLooseAmount]       = useState("");
+  const [looseSuggestions, setLooseSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number}[]>([]);
+  const [looseDropPos, setLooseDropPos] = useState({ top: 0, left: 0, width: 0 });
   const refreshLooseSales = () => setLooseSales(getLooseSales(getLiveToday()));
   const looseTodayTotal = looseSales.reduce((s, e) => s + e.amount, 0);
 
@@ -1417,13 +1419,61 @@ export default function Home() {
               </div>
               {/* Add Entry Form */}
               <div className="p-3 border-b border-violet-50 bg-white space-y-2">
-                <input
-                  value={looseProduct}
-                  onChange={e => setLooseProduct(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("loose-amount-input")?.focus(); } }}
-                  placeholder="Product name (e.g. Triphala Churna)"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 text-sm transition-all"
-                />
+                <div className="relative">
+                  <input
+                    value={looseProduct}
+                    onChange={e => {
+                      setLooseProduct(e.target.value);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setLooseDropPos({ top: rect.bottom + 2, left: rect.left, width: rect.width });
+                      setLooseSuggestions(getMedSuggestions(e.target.value));
+                    }}
+                    onFocus={e => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setLooseDropPos({ top: rect.bottom + 2, left: rect.left, width: rect.width });
+                      setLooseSuggestions(getMedSuggestions(looseProduct));
+                    }}
+                    onBlur={() => setTimeout(() => setLooseSuggestions([]), 150)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        if (looseSuggestions.length > 0) {
+                          setLooseProduct(looseSuggestions[0].name);
+                          setLooseSuggestions([]);
+                          document.getElementById("loose-amount-input")?.focus();
+                        } else {
+                          e.preventDefault();
+                          document.getElementById("loose-amount-input")?.focus();
+                        }
+                      }
+                      if (e.key === "Escape") setLooseSuggestions([]);
+                    }}
+                    placeholder="Product name (e.g. Triphala Churna)"
+                    autoComplete="off"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 text-sm transition-all"
+                  />
+                  {looseSuggestions.length > 0 && (
+                    <div style={{ position: "fixed", zIndex: 99999, backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 10px 25px rgba(0,0,0,0.15)", width: looseDropPos.width + "px", maxHeight: "200px", overflowY: "auto", top: looseDropPos.top + "px", left: looseDropPos.left + "px" }}>
+                      {looseSuggestions.map((s, si) => (
+                        <button key={si} type="button"
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            setLooseProduct(s.name);
+                            setLooseSuggestions([]);
+                            document.getElementById("loose-amount-input")?.focus();
+                          }}
+                          className="w-full text-left px-3 py-2.5 text-xs flex items-center justify-between gap-2 border-b border-slate-50 last:border-0 hover:bg-violet-50">
+                          <span className="font-semibold text-slate-800">{s.name}</span>
+                          <span className="text-slate-500 shrink-0">
+                            <span className="text-violet-600 font-medium">₹{s.mrpPerTablet.toFixed(2)}/tab</span>
+                            <span className={`ml-2 ${s.currentStock <= 0 ? "text-red-500" : "text-green-600"}`}>
+                              {s.currentStock <= 0 ? "OUT" : `${s.currentStock} tabs`}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">₹</span>
