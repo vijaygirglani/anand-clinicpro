@@ -1044,3 +1044,45 @@ export function generateWhatsAppReport(date: string, clinicName = "Clinic", sett
 
   return text;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// DATA MIGRATION — run once on app start
+// ═══════════════════════════════════════════════════════════════
+
+export function runMigrations() {
+  const medicines = getMedicines();
+  if (medicines.length === 0) return;
+
+  let changed = false;
+  const bills = getPurchaseBills();
+
+  for (const med of medicines) {
+    // Fix missing mrpPerTablet
+    if (!med.mrpPerTablet || med.mrpPerTablet === 0 || med.mrpPerTablet === med.mrp) {
+      // Find latest purchase bill for this medicine
+      for (let i = bills.length - 1; i >= 0; i--) {
+        const item = bills[i].items.find(it =>
+          it.medicineName.toLowerCase() === med.name.toLowerCase()
+        );
+        if (item) {
+          const packSize = item.packSize || 1;
+          med.packSize = packSize;
+          med.mrpPerTablet = packSize > 1 ? item.mrp / packSize : item.mrp;
+          med.landingCost = item.landingCostPerTablet || (packSize > 1 ? item.landingCostPerUnit / packSize : item.landingCostPerUnit);
+          // Recalculate stock in tablets
+          if (packSize > 1 && med.currentStock > 0 && med.currentStock === item.totalQtyReceived) {
+            // Stock was stored as packs, convert to tablets
+            med.currentStock = med.currentStock * packSize;
+          }
+          changed = true;
+          break;
+        }
+      }
+    }
+    // Ensure packSize always set
+    if (!med.packSize) { med.packSize = 1; changed = true; }
+    if (!med.mrpPerTablet) { med.mrpPerTablet = med.mrp; changed = true; }
+  }
+
+  if (changed) saveMedicines(medicines);
+}

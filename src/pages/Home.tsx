@@ -1109,11 +1109,11 @@ export default function Home() {
                                       setActiveMedIdx(i);
                                       setMedSuggestions(getMedSuggestions(e.target.value));
                                       const rect = e.currentTarget.getBoundingClientRect();
-                                      setDropdownPos({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: Math.max(rect.width, 320) });
+                                      setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
                                     }}
                                     onFocus={(e) => {
                                       const rect = e.currentTarget.getBoundingClientRect();
-                                      setDropdownPos({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: Math.max(rect.width, 320) });
+                                      setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
                                       setActiveMedIdx(i);
                                       setMedSuggestions(getMedSuggestions(r.medicineName));
                                     }}

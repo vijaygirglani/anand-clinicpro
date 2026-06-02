@@ -20,10 +20,14 @@ import DailyReport from "@/pages/DailyReport";
 import NotFound from "@/pages/not-found";
 
 import { isSetupDone, getActiveSession, logout } from "@/lib/settings";
+import { runMigrations } from "@/lib/store";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 5 * 60 * 1000, retry: 1 } },
 });
+
+// Run data migrations on every app load
+runMigrations();
 
 type AppState = "setup" | "login" | "app";
 
