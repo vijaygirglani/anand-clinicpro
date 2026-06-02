@@ -12,6 +12,7 @@ import { format } from "date-fns";
 interface RowDraft {
   medicineName: string;
   mrp: number;
+  packSize: number;
   batchNo: string;
   expiryDate: string;
   qtyPaid: number;
@@ -22,7 +23,7 @@ interface RowDraft {
 }
 
 const emptyRow = (): RowDraft => ({
-  medicineName: "", mrp: 0, batchNo: "", expiryDate: "",
+  medicineName: "", mrp: 0, packSize: 1, batchNo: "", expiryDate: "",
   qtyPaid: 1, qtyFree: 0, ratePerUnit: 0, discountPct: 0, gstPct: 5,
 });
 
@@ -49,7 +50,7 @@ export default function PurchaseBills() {
 
   const calc = (r: RowDraft) => r.ratePerUnit > 0 ? calcLandingCost({
     qtyPaid: r.qtyPaid, qtyFree: r.qtyFree, ratePerUnit: r.ratePerUnit,
-    discountPct: r.discountPct, gstPct: r.gstPct, mrp: r.mrp,
+    discountPct: r.discountPct, gstPct: r.gstPct, mrp: r.mrp, packSize: r.packSize || 1,
   }) : null;
 
   const grandTotal = rows.reduce((s, r) => {
@@ -68,19 +69,20 @@ export default function PurchaseBills() {
       const medicines = getMedicines();
       const existing = medicines.find(m => m.name.toLowerCase() === r.medicineName.trim().toLowerCase());
       if (!existing) {
-        addMedicine({ name: r.medicineName.trim(), mrp: r.mrp, reorderLevel: 5, currentStock: 0, landingCost: c.landingCostPerUnit });
+        addMedicine({ name: r.medicineName.trim(), mrp: r.mrp, mrpPerTablet: c.mrpPerTablet, packSize: r.packSize || 1, reorderLevel: 5, currentStock: 0, landingCost: c.landingCostPerTablet });
       } else {
-        updateMedicine(existing.id, { mrp: r.mrp, landingCost: c.landingCostPerUnit });
+        updateMedicine(existing.id, { mrp: r.mrp, mrpPerTablet: c.mrpPerTablet, packSize: r.packSize || 1, landingCost: c.landingCostPerTablet });
       }
       // Refresh medicines to get the id
       const freshMed = getMedicines().find(m => m.name.toLowerCase() === r.medicineName.trim().toLowerCase());
       return {
+        ...c,
         medicineId: freshMed?.id || 0,
         medicineName: r.medicineName.trim(),
-        mrp: r.mrp, batchNo: r.batchNo, expiryDate: r.expiryDate,
+        mrp: r.mrp, packSize: r.packSize || 1,
+        batchNo: r.batchNo, expiryDate: r.expiryDate,
         qtyPaid: r.qtyPaid, qtyFree: r.qtyFree, ratePerUnit: r.ratePerUnit,
         discountPct: r.discountPct, gstPct: r.gstPct,
-        ...c,
       };
     });
 
@@ -104,6 +106,7 @@ export default function PurchaseBills() {
     setRows(bill.items.map(item => ({
       medicineName: item.medicineName,
       mrp: item.mrp,
+      packSize: item.packSize || 1,
       batchNo: item.batchNo,
       expiryDate: item.expiryDate,
       qtyPaid: item.qtyPaid,
@@ -192,6 +195,9 @@ export default function PurchaseBills() {
                           <input value={r.medicineName} onChange={e => updateRow(i, "medicineName", e.target.value)}
                             placeholder="Medicine name" className={inputCls} autoComplete="off" />
                         </td>
+                        <td className="px-2 py-1.5"><input type="number" value={r.packSize} min={1}
+                            onChange={e => updateRow(i, "packSize", Number(e.target.value))}
+                            className={inputCls + " text-right"} placeholder="1" /></td>
                         <td className="px-2 py-1.5"><input value={r.batchNo} onChange={e => updateRow(i, "batchNo", e.target.value)} placeholder="Batch" className={inputCls} /></td>
                         <td className="px-2 py-1.5"><input value={r.expiryDate} onChange={e => updateRow(i, "expiryDate", e.target.value)} placeholder="MM/YY" className={inputCls} /></td>
                         <td className="px-2 py-1.5"><input type="number" step="0.01" value={r.mrp || ""} onChange={e => updateRow(i, "mrp", Number(e.target.value))} className={inputCls + " text-right"} /></td>
@@ -201,7 +207,12 @@ export default function PurchaseBills() {
                         <td className="px-2 py-1.5"><input type="number" step="0.1" value={r.discountPct} onChange={e => updateRow(i, "discountPct", Number(e.target.value))} className={inputCls + " text-right"} /></td>
                         <td className="px-2 py-1.5"><input type="number" step="0.1" value={r.gstPct} onChange={e => updateRow(i, "gstPct", Number(e.target.value))} className={inputCls + " text-right"} /></td>
                         <td className="px-2 py-1.5 text-right">
-                          {c ? <span className="font-semibold text-blue-600">₹{c.landingCostPerUnit.toFixed(2)}</span> : <span className="text-slate-300">—</span>}
+                          {c ? (
+                            <div>
+                              <span className="font-semibold text-blue-600">₹{c.landingCostPerTablet.toFixed(4)}</span>
+                              {r.packSize > 1 && <div className="text-slate-400 text-xs">MRP/tab: ₹{c.mrpPerTablet.toFixed(2)}</div>}
+                            </div>
+                          ) : <span className="text-slate-300">—</span>}
                         </td>
                         <td className="px-2 py-1.5 text-right">
                           {c ? <span className="font-semibold text-slate-800">₹{c.totalPaid.toFixed(2)}</span> : <span className="text-slate-300">—</span>}
@@ -271,9 +282,10 @@ export default function PurchaseBills() {
                         <th className="px-3 py-2 text-left text-slate-500 font-semibold">Medicine</th>
                         <th className="px-3 py-2 text-center text-slate-500 font-semibold">Batch</th>
                         <th className="px-3 py-2 text-center text-slate-500 font-semibold">Expiry</th>
-                        <th className="px-3 py-2 text-right text-slate-500 font-semibold">MRP</th>
-                        <th className="px-3 py-2 text-right text-slate-500 font-semibold">Qty</th>
-                        <th className="px-3 py-2 text-right text-slate-500 font-semibold">Landing ₹</th>
+                        <th className="px-3 py-2 text-right text-slate-500 font-semibold">Pack</th>
+                        <th className="px-3 py-2 text-right text-slate-500 font-semibold">MRP/Pack</th>
+                        <th className="px-3 py-2 text-right text-slate-500 font-semibold">Qty (Tabs)</th>
+                        <th className="px-3 py-2 text-right text-slate-500 font-semibold">Landing/Tab</th>
                         <th className="px-3 py-2 text-right text-slate-500 font-semibold">Total ₹</th>
                       </tr>
                     </thead>
@@ -284,9 +296,13 @@ export default function PurchaseBills() {
                           <td className="px-3 py-2 font-medium text-slate-800">{item.medicineName}</td>
                           <td className="px-3 py-2 text-center text-slate-600">{item.batchNo || "—"}</td>
                           <td className="px-3 py-2 text-center text-slate-600">{item.expiryDate || "—"}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">{item.packSize || 1}</td>
                           <td className="px-3 py-2 text-right text-slate-700">₹{item.mrp.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-slate-700">{item.totalQtyReceived} <span className="text-slate-400">({item.qtyPaid}+{item.qtyFree})</span></td>
-                          <td className="px-3 py-2 text-right text-blue-600 font-semibold">₹{item.landingCostPerUnit.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-slate-700">
+                            {item.totalTabletsReceived || item.totalQtyReceived}
+                            <span className="text-slate-400 text-xs ml-1">({item.totalQtyReceived} packs)</span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-blue-600 font-semibold">₹{(item.landingCostPerTablet || item.landingCostPerUnit).toFixed(4)}</td>
                           <td className="px-3 py-2 text-right font-semibold text-slate-800">₹{item.totalPaid.toFixed(2)}</td>
                         </tr>
                       ))}

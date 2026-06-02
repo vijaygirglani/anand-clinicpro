@@ -1077,7 +1077,7 @@ export default function Home() {
                             <th className="px-3 py-2 text-left text-slate-500 font-semibold w-6">#</th>
                             <th className="px-2 py-2 text-left text-slate-500 font-semibold">Medicine</th>
                             <th className="px-2 py-2 text-right text-slate-500 font-semibold w-20">Qty</th>
-                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-24">MRP (₹)</th>
+                            <th className="px-2 py-2 text-right text-slate-500 font-semibold w-28">MRP/Tab (₹)</th>
                             <th className="px-2 py-2 text-right text-slate-500 font-semibold w-24">Amount</th>
                             <th className="px-2 py-2 w-8"></th>
                           </tr>
@@ -1092,7 +1092,8 @@ export default function Home() {
                                     updateMedRow(i, "medicineName", e.target.value);
                                     // Auto-fill MRP from medicines master
                                     const med = getMedicines().find(m => m.name.toLowerCase() === e.target.value.toLowerCase());
-                                    if (med) updateMedRow(i, "mrp", med.mrp);
+                                    // Use per-tablet MRP for billing
+                                    if (med) updateMedRow(i, "mrp", med.mrpPerTablet || med.mrp);
                                   }}
                                   placeholder="Medicine name..."
                                   autoComplete="off"

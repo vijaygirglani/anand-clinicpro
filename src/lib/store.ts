@@ -49,28 +49,34 @@ export interface ComplaintCode {
 
 export interface MedicineItem {
   id: number;
-  name: string;           // "Flumet IV 100ml"
-  mrp: number;            // 97.00
-  reorderLevel: number;   // alert when stock <= this
-  currentStock: number;   // total units on hand
-  landingCost: number;    // average landing cost per unit (updated on each purchase)
+  name: string;           // "Merci Tab"
+  mrp: number;            // MRP per pack (e.g. ₹79 for 10 tabs)
+  mrpPerTablet: number;   // MRP per tablet (e.g. ₹7.90)
+  packSize: number;       // tablets per pack (e.g. 10)
+  reorderLevel: number;   // alert when stock <= this (in tablets)
+  currentStock: number;   // total TABLETS on hand
+  landingCost: number;    // landing cost per TABLET
   createdAt: string;
 }
 
 export interface PurchaseBillItem {
   medicineId: number;
   medicineName: string;
-  mrp: number;
+  mrp: number;            // MRP per pack/strip
+  packSize: number;       // tablets per pack (e.g. 10)
+  mrpPerTablet: number;   // mrp / packSize
   batchNo: string;
   expiryDate: string;     // "MM/YY"
-  qtyPaid: number;
-  qtyFree: number;
-  ratePerUnit: number;
+  qtyPaid: number;        // packs paid
+  qtyFree: number;        // packs free
+  ratePerUnit: number;    // rate per pack
   discountPct: number;
   gstPct: number;
   // Auto-calculated
-  landingCostPerUnit: number;
-  totalQtyReceived: number;
+  landingCostPerUnit: number;   // landing cost per PACK
+  landingCostPerTablet: number; // landing cost per TABLET
+  totalQtyReceived: number;     // total PACKS received
+  totalTabletsReceived: number; // total TABLETS = packs × packSize
   taxableAmount: number;
   gstAmount: number;
   totalPaid: number;
@@ -510,26 +516,41 @@ export function calcLandingCost(params: {
   discountPct: number;
   gstPct: number;
   mrp: number;
+  packSize?: number;
 }): {
   taxableAmount: number;
   gstAmount: number;
   totalPaid: number;
   totalQtyReceived: number;
+  totalTabletsReceived: number;
   landingCostPerUnit: number;
+  landingCostPerTablet: number;
+  mrpPerTablet: number;
   profitPerUnit: number;
   profitPct: number;
+  profitPerTablet: number;
 } {
-  const { qtyPaid, qtyFree, ratePerUnit, discountPct, gstPct, mrp } = params;
+  const { qtyPaid, qtyFree, ratePerUnit, discountPct, gstPct, mrp, packSize = 1 } = params;
   const totalQtyReceived = qtyPaid + qtyFree;
+  const totalTabletsReceived = totalQtyReceived * packSize;
   const grossAmt = qtyPaid * ratePerUnit;
   const discAmt = grossAmt * (discountPct / 100);
   const taxableAmount = grossAmt - discAmt;
   const gstAmount = taxableAmount * (gstPct / 100);
   const totalPaid = taxableAmount + gstAmount;
   const landingCostPerUnit = totalQtyReceived > 0 ? totalPaid / totalQtyReceived : 0;
+  const landingCostPerTablet = packSize > 1 ? landingCostPerUnit / packSize : landingCostPerUnit;
+  const mrpPerTablet = packSize > 1 ? mrp / packSize : mrp;
   const profitPerUnit = mrp - landingCostPerUnit;
   const profitPct = mrp > 0 ? (profitPerUnit / mrp) * 100 : 0;
-  return { taxableAmount, gstAmount, totalPaid, totalQtyReceived, landingCostPerUnit, profitPerUnit, profitPct };
+  const profitPerTablet = mrpPerTablet - landingCostPerTablet;
+  return {
+    taxableAmount, gstAmount, totalPaid,
+    totalQtyReceived, totalTabletsReceived,
+    landingCostPerUnit, landingCostPerTablet,
+    mrpPerTablet,
+    profitPerUnit, profitPct, profitPerTablet
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -609,21 +630,25 @@ export function addPurchaseBill(data: Omit<PurchaseBill, "id" | "createdAt">): P
   bills.push(bill);
   savePurchaseBills(bills);
 
-  // Update stock for each item — load fresh from localStorage each time to avoid stale data
+  // Update stock in TABLETS for each item
   for (const item of data.items) {
     const medicines = getMedicines(); // fresh read each iteration
     const idx = medicines.findIndex(m =>
       m.name.toLowerCase() === item.medicineName.trim().toLowerCase()
     );
     if (idx !== -1) {
-      const oldStock = medicines[idx].currentStock;
-      const oldCost = medicines[idx].landingCost || 0;
-      const newStock = oldStock + item.totalQtyReceived;
+      const tabletsReceived = item.totalTabletsReceived || item.totalQtyReceived;
+      const oldStock = medicines[idx].currentStock; // in tablets
+      const oldCost = medicines[idx].landingCost || 0; // per tablet
+      const newStock = oldStock + tabletsReceived;
+      const landingPerTablet = item.landingCostPerTablet || item.landingCostPerUnit;
       const newCost = newStock > 0
-        ? ((oldStock * oldCost) + (item.totalQtyReceived * item.landingCostPerUnit)) / newStock
-        : item.landingCostPerUnit;
+        ? ((oldStock * oldCost) + (tabletsReceived * landingPerTablet)) / newStock
+        : landingPerTablet;
       medicines[idx].currentStock = newStock;
-      medicines[idx].landingCost = Math.round(newCost * 100) / 100;
+      medicines[idx].landingCost = Math.round(newCost * 10000) / 10000;
+      medicines[idx].mrpPerTablet = item.mrpPerTablet || item.mrp;
+      medicines[idx].packSize = item.packSize || 1;
       saveMedicines(medicines); // save immediately after each update
     }
   }
@@ -892,6 +917,8 @@ export function deductMedicineStock(items: { medicineName: string; qty: number; 
         id: nextId(),
         name: item.medicineName,
         mrp: item.mrp,
+        mrpPerTablet: item.mrp,
+        packSize: 1,
         reorderLevel: 5,
         currentStock: 0,
         landingCost: item.landingCost,

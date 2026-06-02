@@ -38,7 +38,7 @@ export default function Medicines() {
       updateMedicine(editId, data);
       toast({ title: "Medicine updated" });
     } else {
-      addMedicine(data);
+      addMedicine({ ...data, mrpPerTablet: data.mrp, packSize: 1 });
       toast({ title: "Medicine added" });
     }
     reset();
