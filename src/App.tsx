@@ -19,7 +19,7 @@ import StockStatus from "@/pages/StockStatus";
 import DailyReport from "@/pages/DailyReport";
 import NotFound from "@/pages/not-found";
 
-import { isSetupDone, getActiveSession } from "@/lib/settings";
+import { isSetupDone, getActiveSession, logout } from "@/lib/settings";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 5 * 60 * 1000, retry: 1 } },
@@ -33,40 +33,52 @@ function getInitialState(): AppState {
   return "app";
 }
 
-function AppRoutes({ onSwitch }: { onSwitch: () => void }) {
-  return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/daily-register" component={DailyRegister} />
-      <Route path="/ayurvedic-register" component={AyurvedicRegister} />
-      <Route path="/complaint-codes" component={ComplaintCodes} />
-      <Route path="/pathya-apathya" component={PathyaApathya} />
-      <Route path="/medicines" component={Medicines} />
-      <Route path="/purchase-bills" component={PurchaseBills} />
-      <Route path="/medicine-billing" component={MedicineBilling} />
-      <Route path="/stock-status" component={StockStatus} />
-      <Route path="/daily-report" component={DailyReport} />
-      <Route path="/settings">{() => <SettingsPage onLogout={onSwitch} />}</Route>
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
-
 export default function App() {
   const [state, setState] = useState<AppState>(getInitialState);
+
+  // This is passed down via Layout context
+  const handleSwitch = () => {
+    logout();
+    setState("login");
+  };
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        {state === "setup" && <Setup onDone={() => setState("login")} />}
-        {state === "login" && <Login onLogin={() => setState("app")} />}
+        {state === "setup" && (
+          <Setup onDone={() => setState("login")} />
+        )}
+        {state === "login" && (
+          <Login onLogin={() => setState("app")} />
+        )}
         {state === "app" && (
           <WouterRouter base="">
-            <AppRoutes onSwitch={() => setState("login")} />
+            {/* Store handleSwitch in window so Layout can call it */}
+            <SwitchBridge onSwitch={handleSwitch} />
+            <Switch>
+              <Route path="/" component={Home} />
+              <Route path="/daily-register" component={DailyRegister} />
+              <Route path="/ayurvedic-register" component={AyurvedicRegister} />
+              <Route path="/complaint-codes" component={ComplaintCodes} />
+              <Route path="/pathya-apathya" component={PathyaApathya} />
+              <Route path="/medicines" component={Medicines} />
+              <Route path="/purchase-bills" component={PurchaseBills} />
+              <Route path="/medicine-billing" component={MedicineBilling} />
+              <Route path="/stock-status" component={StockStatus} />
+              <Route path="/daily-report" component={DailyReport} />
+              <Route path="/settings">{() => <SettingsPage onLogout={handleSwitch} />}</Route>
+              <Route component={NotFound} />
+            </Switch>
           </WouterRouter>
         )}
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
   );
+}
+
+// Bridge to expose handleSwitch to Layout without prop drilling
+function SwitchBridge({ onSwitch }: { onSwitch: () => void }) {
+  (window as any).__clinicproSwitch = onSwitch;
+  return null;
 }

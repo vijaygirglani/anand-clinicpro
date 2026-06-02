@@ -83,10 +83,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const badgeBg    = isDoc1 ? "bg-blue-500 hover:bg-blue-600"    : "bg-emerald-500 hover:bg-emerald-600";
   const mobileBg   = isDoc1 ? "bg-blue-500"                      : "bg-emerald-500";
 
-  // Switch doctor — logout and reload page so App re-evaluates state
+  // Switch doctor — calls the App-level state updater via window bridge
   const handleSwitch = () => {
     logout();
-    window.location.reload();
+    const switchFn = (window as any).__clinicproSwitch;
+    if (typeof switchFn === "function") {
+      switchFn();
+    }
   };
 
   return (
