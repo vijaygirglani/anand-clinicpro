@@ -386,7 +386,7 @@ export default function Home() {
             return {
               medicineName: m.medicineName,
               qty: m.defaultQty,
-              mrp: med?.mrp || 0,
+              mrp: med?.mrpPerTablet || med?.mrp || 0,
             };
           }));
         }
