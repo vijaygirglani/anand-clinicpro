@@ -274,6 +274,8 @@ export default function Home() {
 
   const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number}[]>([]);
   const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+  const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const addMedRow = () => setMedRows(p => [...p, { medicineName: "", qty: 1, mrp: 0 }]);
 
@@ -1082,7 +1084,7 @@ export default function Home() {
                       + Add Medicine
                     </button>
                   </div>
-                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="border border-slate-200 rounded-xl">
                       <table className="w-full text-xs">
                         <thead className="bg-slate-50 border-b border-slate-200">
                           <tr>
@@ -1106,29 +1108,49 @@ export default function Home() {
                                       updateMedRow(i, "mrp", 0);
                                       setActiveMedIdx(i);
                                       setMedSuggestions(getMedSuggestions(e.target.value));
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setDropdownPos({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: Math.max(rect.width, 320) });
                                     }}
-                                    onFocus={() => {
+                                    onFocus={(e) => {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setDropdownPos({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: Math.max(rect.width, 320) });
                                       setActiveMedIdx(i);
                                       setMedSuggestions(getMedSuggestions(r.medicineName));
                                     }}
-                                    onBlur={() => setTimeout(() => setMedSuggestions([]), 200)}
+                                    onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); }, 150)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Escape") { setMedSuggestions([]); setActiveMedIdx(null); }
+                                      if (e.key === "Enter" && medSuggestions.length > 0) {
+                                        e.preventDefault();
+                                        const s = medSuggestions[0];
+                                        updateMedRow(i, "medicineName", s.name);
+                                        updateMedRow(i, "mrp", s.mrpPerTablet);
+                                        setMedSuggestions([]);
+                                        setActiveMedIdx(null);
+                                      }
+                                    }}
                                     placeholder="Type medicine name..."
                                     autoComplete="off"
                                     className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                   {activeMedIdx === i && medSuggestions.length > 0 && (
-                                    <div className="absolute top-full left-0 z-50 w-full bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 overflow-hidden">
+                                    <div style={{ position: "fixed", zIndex: 99999, backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: "320px", maxHeight: "240px", overflowY: "auto" }}
+                                      id={`med-dropdown-${i}`}>
                                       {medSuggestions.map((s, si) => (
                                         <button key={si} type="button"
-                                          onMouseDown={() => {
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
                                             updateMedRow(i, "medicineName", s.name);
                                             updateMedRow(i, "mrp", s.mrpPerTablet);
                                             setMedSuggestions([]);
                                             setActiveMedIdx(null);
                                           }}
-                                          className="w-full text-left px-3 py-2 text-xs hover:bg-primary/10 flex items-center justify-between gap-2 border-b border-slate-50 last:border-0">
-                                          <span className="font-medium text-slate-800">{s.name}</span>
-                                          <span className="text-slate-500 shrink-0">
-                                            ₹{s.mrpPerTablet.toFixed(2)}/tab · {s.currentStock} tabs
+                                          className={`w-full text-left px-3 py-2.5 text-xs flex items-center justify-between gap-2 border-b border-slate-50 last:border-0 hover:bg-blue-50 ${si === 0 ? "rounded-t-lg" : ""}`}>
+                                          <span className="font-semibold text-slate-800">{s.name}</span>
+                                          <span className="text-slate-500 shrink-0 text-right">
+                                            <span className="text-primary font-medium">₹{s.mrpPerTablet.toFixed(2)}/tab</span>
+                                            <span className={`ml-2 ${s.currentStock <= 0 ? "text-red-500" : "text-green-600"}`}>
+                                              {s.currentStock <= 0 ? "OUT" : `${s.currentStock} tabs`}
+                                            </span>
                                           </span>
                                         </button>
                                       ))}
