@@ -7,7 +7,7 @@ import {
   addPatient, lookupByMobile, lookupByName, findComplaintCode,
   getNextPatientNo, getNextCaseNo, lookupByComplaint, lookupByAddress,
   searchPatientSuggestions, checkMedicineStock, deductMedicineStock,
-  getMedicineNamesFromPurchases, getMedicines,
+  getMedicineNamesFromPurchases, getMedicines, addMedicineBill,
   type Patient, type PatientSuggestion,
 } from "@/lib/store";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
@@ -604,16 +604,47 @@ export default function Home() {
       reports: data.reports || "", fees: finalFees, doctorId: activeDoctor?.id || 1,
       attachments, registerType, visitDate,
     });
-    // Deduct medicine stock
+    // Deduct medicine stock + create medicine bill for profit tracking
     if (validMedRows.length > 0) {
       const medicines = getMedicines();
+      const saleItems = validMedRows.map(r => {
+        const med = medicines.find(m => m.name.toLowerCase() === r.medicineName.toLowerCase());
+        const landingCost = med?.landingCost || 0;
+        const salePrice = r.mrp * r.qty;
+        const cost = landingCost * r.qty;
+        return {
+          medicineName: r.medicineName,
+          qty: r.qty,
+          mrp: r.mrp,
+          landingCost,
+          salePrice,
+          profit: salePrice - cost,
+          medicineId: med?.id || 0,
+        };
+      });
       deductMedicineStock(
-        validMedRows.map(r => {
-          const med = medicines.find(m => m.name.toLowerCase() === r.medicineName.toLowerCase());
-          return { medicineName: r.medicineName, qty: r.qty, mrp: r.mrp, landingCost: med?.landingCost || 0 };
-        }),
+        saleItems.map(s => ({ medicineName: s.medicineName, qty: s.qty, mrp: s.mrp, landingCost: s.landingCost })),
         saved.name, visitDate
       );
+      // Create medicine bill for profit tracking in daily report
+      addMedicineBill({
+        patientId: saved.id,
+        patientName: saved.name,
+        doctorId: activeDoctor?.id || 1,
+        billDate: visitDate,
+        items: saleItems.map(s => ({
+          medicineId: s.medicineId,
+          medicineName: s.medicineName,
+          qty: s.qty,
+          mrp: s.mrp,
+          landingCost: s.landingCost,
+          salePrice: s.salePrice,
+          profit: s.profit,
+        })),
+        totalSale: saleItems.reduce((sum, s) => sum + s.salePrice, 0),
+        totalCost: saleItems.reduce((sum, s) => sum + s.landingCost * s.qty, 0),
+        totalProfit: saleItems.reduce((sum, s) => sum + s.profit, 0),
+      });
     }
 
     if (feesMarkedPending && saved.fees > 0) {
