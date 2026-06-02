@@ -617,14 +617,16 @@ export default function Home() {
       const medicines = getMedicines();
       const saleItems = validMedRows.map(r => {
         const med = medicines.find(m => m.name.toLowerCase() === r.medicineName.toLowerCase());
-        const landingCost = med?.landingCost || 0;
+        // landingCost per tablet = landingCost / packSize
+        const packSize = med?.packSize || 1;
+        const landingCostPerTab = med ? (med.landingCost / packSize) : 0;
         const salePrice = r.mrp * r.qty;
-        const cost = landingCost * r.qty;
+        const cost = landingCostPerTab * r.qty;
         return {
           medicineName: r.medicineName,
           qty: r.qty,
           mrp: r.mrp,
-          landingCost,
+          landingCost: landingCostPerTab,
           salePrice,
           profit: salePrice - cost,
           medicineId: med?.id || 0,
