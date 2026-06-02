@@ -266,6 +266,14 @@ export default function Home() {
   // ── Medicine Table state ──
   interface MedRow { medicineName: string; qty: number; mrp: number; }
   const [medRows, setMedRows] = useState<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0 }]);
+  const medRowsRef = useRef<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0 }]);
+  const setMedRowsSync = (rows: MedRow[] | ((prev: MedRow[]) => MedRow[])) => {
+    setMedRows(prev => {
+      const next = typeof rows === "function" ? rows(prev) : rows;
+      medRowsRef.current = next;
+      return next;
+    });
+  };
   const [otherCharges, setOtherCharges] = useState<number>(0);
   const medGross = medRows.reduce((s, r) => s + r.mrp * r.qty, 0);
   const billAmount = medGross + otherCharges;
@@ -277,7 +285,7 @@ export default function Home() {
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const addMedRow = () => setMedRows(p => [...p, { medicineName: "", qty: 1, mrp: 0 }]);
+  const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 1, mrp: 0 }]);
 
   const getMedSuggestions = (query: string) => {
     if (!query || query.length < 2) return [];
@@ -288,8 +296,8 @@ export default function Home() {
       .slice(0, 8);
   };
   const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
-    setMedRows(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
-  const removeMedRow = (i: number) => setMedRows(p => p.filter((_, idx) => idx !== i));
+    setMedRowsSync(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
+  const removeMedRow = (i: number) => setMedRowsSync(p => p.filter((_, idx) => idx !== i));
   const refreshPending = () => setPendingFees(getPendingFees());
 
   // ── Loose Medicine Sales state ──
@@ -389,7 +397,7 @@ export default function Home() {
         // Auto-fill medicine rows from complaint code template
         if (codeRecord.medicines && codeRecord.medicines.length > 0) {
           const medicines = getMedicines();
-          setMedRows(codeRecord.medicines.map(m => {
+          setMedRowsSync(codeRecord.medicines.map(m => {
             // Get MRP from purchase bills / medicine master
             const med = medicines.find(med => med.name.toLowerCase() === m.medicineName.toLowerCase());
             return {
@@ -581,7 +589,7 @@ export default function Home() {
     const visitDate = data.visitDate || todayStr;
 
     // Stock check before saving
-    const validMedRows = medRows.filter(r => r.medicineName.trim() && r.qty > 0);
+    const validMedRows = medRowsRef.current.filter(r => r.medicineName.trim() && r.qty > 0);
     if (validMedRows.length > 0) {
       const stockCheck = checkMedicineStock(validMedRows.map(r => ({ medicineName: r.medicineName, qty: r.qty })));
       if (!stockCheck.ok) {
@@ -664,7 +672,7 @@ export default function Home() {
     setPatientHistory([]);
     setHistoryName("");
     setHistoryMobile("");
-    setMedRows([{ medicineName: "", qty: 1, mrp: 0 }]);
+    setMedRowsSync([{ medicineName: "", qty: 1, mrp: 0 }]);
     setOtherCharges(0);
     setSelectedPADisease(null);
     setPaMatches([]);
