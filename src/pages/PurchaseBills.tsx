@@ -172,15 +172,16 @@ export default function PurchaseBills() {
                   <tr>
                     <th className="px-3 py-2 text-left text-slate-500 font-semibold w-8">#</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-semibold min-w-[160px]">Medicine Name</th>
+                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-14">Pack</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-semibold w-20">Batch</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-semibold w-20">Expiry</th>
-                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-20">MRP</th>
-                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-16">Qty Paid</th>
+                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-20">MRP/Pack</th>
+                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-16">Qty</th>
                     <th className="px-2 py-2 text-right text-slate-500 font-semibold w-16">Free</th>
-                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-20">Rate</th>
+                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-20">Rate/Pack</th>
                     <th className="px-2 py-2 text-right text-slate-500 font-semibold w-16">Disc%</th>
                     <th className="px-2 py-2 text-right text-slate-500 font-semibold w-14">GST%</th>
-                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-24">Landing ₹</th>
+                    <th className="px-2 py-2 text-right text-slate-500 font-semibold w-28">Land/Tab ₹</th>
                     <th className="px-2 py-2 text-right text-slate-500 font-semibold w-24">Total ₹</th>
                     <th className="px-2 py-2 w-8"></th>
                   </tr>
