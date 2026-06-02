@@ -609,38 +609,24 @@ export function addPurchaseBill(data: Omit<PurchaseBill, "id" | "createdAt">): P
   bills.push(bill);
   savePurchaseBills(bills);
 
-  // Update stock and landing cost for each item
-  const medicines = getMedicines();
+  // Update stock for each item — load fresh from localStorage each time to avoid stale data
   for (const item of data.items) {
-    // Match by name (case-insensitive) since medicineId may be 0 for new medicines
-    const idx = medicines.findIndex(m => 
-      m.name.toLowerCase() === item.medicineName.toLowerCase() ||
-      (item.medicineId > 0 && m.id === item.medicineId)
+    const medicines = getMedicines(); // fresh read each iteration
+    const idx = medicines.findIndex(m =>
+      m.name.toLowerCase() === item.medicineName.trim().toLowerCase()
     );
     if (idx !== -1) {
       const oldStock = medicines[idx].currentStock;
-      const oldCost = medicines[idx].landingCost;
+      const oldCost = medicines[idx].landingCost || 0;
       const newStock = oldStock + item.totalQtyReceived;
-      // Weighted average landing cost
       const newCost = newStock > 0
         ? ((oldStock * oldCost) + (item.totalQtyReceived * item.landingCostPerUnit)) / newStock
         : item.landingCostPerUnit;
       medicines[idx].currentStock = newStock;
       medicines[idx].landingCost = Math.round(newCost * 100) / 100;
+      saveMedicines(medicines); // save immediately after each update
     }
-    // Add to stock ledger
-    addStockLedgerEntry({
-      medicineId: item.medicineId,
-      medicineName: item.medicineName,
-      type: "purchase",
-      qty: item.totalQtyReceived,
-      balanceAfter: medicines.find(m => m.id === item.medicineId)?.currentStock || 0,
-      refId: bill.id,
-      refNo: data.billNo,
-      date: data.billDate,
-    });
   }
-  saveMedicines(medicines);
   return bill;
 }
 

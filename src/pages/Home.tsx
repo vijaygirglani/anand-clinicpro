@@ -265,7 +265,7 @@ export default function Home() {
 
   // ── Medicine Table state ──
   interface MedRow { medicineName: string; qty: number; mrp: number; }
-  const [medRows, setMedRows] = useState<MedRow[]>([]);
+  const [medRows, setMedRows] = useState<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0 }]);
   const [otherCharges, setOtherCharges] = useState<number>(0);
   const medGross = medRows.reduce((s, r) => s + r.mrp * r.qty, 0);
   const billAmount = medGross + otherCharges;
@@ -606,7 +606,7 @@ export default function Home() {
     setPatientHistory([]);
     setHistoryName("");
     setHistoryMobile("");
-    setMedRows([]);
+    setMedRows([{ medicineName: "", qty: 1, mrp: 0 }]);
     setOtherCharges(0);
     setSelectedPADisease(null);
     setPaMatches([]);
@@ -1049,11 +1049,7 @@ export default function Home() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700">Treatment / Medicines</label>
-                  <textarea {...form.register("treatment")} rows={2}
-                    className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Prescribed medicines..." />
-                </div>
+
                 {/* ── Medicine Table ── */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -1070,8 +1066,7 @@ export default function Home() {
                       + Add Medicine
                     </button>
                   </div>
-                  {medRows.length > 0 && (
-                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
                       <table className="w-full text-xs">
                         <thead className="bg-slate-50 border-b border-slate-200">
                           <tr>
@@ -1136,8 +1131,7 @@ export default function Home() {
                           Bill: ₹{billAmount.toFixed(2)}
                         </div>
                       </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
