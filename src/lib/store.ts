@@ -23,6 +23,7 @@ export interface Patient {
   fees: number;
   attachments?: string[];
   registerType?: "general" | "ayurvedic";
+  doctorId?: 1 | 2;
   visitDate: string;
   createdAt: string;
 }
@@ -706,50 +707,68 @@ export function getMedicineBillsByMonth(year: number, month: number): MedicineBi
 // DAILY PROFIT REPORT
 // ═══════════════════════════════════════════════════════════════
 
-export interface DailyProfitReport {
-  date: string;
+export interface DoctorDailyStats {
+  doctorId: 1 | 2;
+  doctorName: string;
+  patients: number;
   consultationFees: number;
   medicineSales: number;
   medicineCost: number;
   medicineProfit: number;
+  total: number; // consultationFees + medicineProfit
+}
+
+export interface DailyProfitReport {
+  date: string;
   totalPatients: number;
-  doctors: {
-    doctor: Doctor;
-    consultationShare: number;
-    medicineProfitShare: number;
-    total: number;
-  }[];
+  totalConsultation: number;
+  totalMedicineSales: number;
+  totalMedicineCost: number;
+  totalMedicineProfit: number;
+  grandTotal: number;
+  doctor1: DoctorDailyStats;
+  doctor2: DoctorDailyStats;
   lowStockAlerts: { name: string; currentStock: number }[];
 }
 
-export function getDailyProfitReport(date: string): DailyProfitReport {
-  const patients = getPatientsByDate(date);
-  const consultationFees = patients.reduce((s, p) => s + (p.fees || 0), 0);
+export function getDailyProfitReport(date: string, settings?: { doctor1Name: string; doctor2Name: string }): DailyProfitReport {
+  const allPatients = getPatientsByDate(date);
+  const allMedBills = getMedicineBillsByDate(date);
 
-  const medicineBills = getMedicineBillsByDate(date);
-  const medicineSales = medicineBills.reduce((s, b) => s + b.totalSale, 0);
-  const medicineCost = medicineBills.reduce((s, b) => s + b.totalCost, 0);
-  const medicineProfit = medicineBills.reduce((s, b) => s + b.totalProfit, 0);
-
-  const doctors = getDoctors();
-  const doctorBreakdown = doctors.map(doctor => {
-    const pct = doctor.profitSharePct / 100;
+  const calcDoctor = (doctorId: 1 | 2, name: string): DoctorDailyStats => {
+    const pts = allPatients.filter(p => (p as any).doctorId === doctorId || (!p.hasOwnProperty('doctorId') && doctorId === 1));
+    // For medicine bills, filter by doctorId
+    const bills = allMedBills.filter(b => b.doctorId === doctorId);
+    const consultationFees = pts.reduce((s, p) => s + (p.fees || 0), 0);
+    const medicineSales = bills.reduce((s, b) => s + b.totalSale, 0);
+    const medicineCost = bills.reduce((s, b) => s + b.totalCost, 0);
+    const medicineProfit = bills.reduce((s, b) => s + b.totalProfit, 0);
     return {
-      doctor,
-      consultationShare: Math.round(consultationFees * pct * 100) / 100,
-      medicineProfitShare: Math.round(medicineProfit * pct * 100) / 100,
-      total: Math.round((consultationFees + medicineProfit) * pct * 100) / 100,
+      doctorId, doctorName: name,
+      patients: pts.length,
+      consultationFees, medicineSales, medicineCost, medicineProfit,
+      total: consultationFees + medicineProfit,
     };
-  });
+  };
+
+  const d1Name = settings?.doctor1Name || "Doctor 1";
+  const d2Name = settings?.doctor2Name || "Doctor 2";
+  const doctor1 = calcDoctor(1, d1Name);
+  const doctor2 = calcDoctor(2, d2Name);
 
   const lowStockAlerts = getMedicines()
     .filter(m => m.currentStock > 0 && m.currentStock <= m.reorderLevel)
     .map(m => ({ name: m.name, currentStock: m.currentStock }));
 
   return {
-    date, consultationFees, medicineSales, medicineCost,
-    medicineProfit, totalPatients: patients.length,
-    doctors: doctorBreakdown, lowStockAlerts,
+    date,
+    totalPatients: allPatients.length,
+    totalConsultation: doctor1.consultationFees + doctor2.consultationFees,
+    totalMedicineSales: doctor1.medicineSales + doctor2.medicineSales,
+    totalMedicineCost: doctor1.medicineCost + doctor2.medicineCost,
+    totalMedicineProfit: doctor1.medicineProfit + doctor2.medicineProfit,
+    grandTotal: doctor1.total + doctor2.total,
+    doctor1, doctor2, lowStockAlerts,
   };
 }
 
@@ -831,30 +850,47 @@ export function getExpiryList(): ExpiryItem[] {
 // WHATSAPP REPORT GENERATOR
 // ═══════════════════════════════════════════════════════════════
 
-export function generateWhatsAppReport(date: string): string {
-  const report = getDailyProfitReport(date);
+export function generateWhatsAppReport(date: string, clinicName = "Clinic", settings?: { doctor1Name: string; doctor2Name: string }): string {
+  const report = getDailyProfitReport(date, settings);
   const d = new Date(date + "T00:00:00");
   const displayDate = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 
-  let text = `🏥 *Manglam Clinic Daily Report*\n`;
-  text += `📅 Date: ${displayDate}\n\n`;
-  text += `👥 Patients: ${report.totalPatients}\n`;
-  text += `💵 Consultation: ₹${report.consultationFees.toLocaleString("en-IN")}\n`;
-  text += `💊 Medicine Sales: ₹${report.medicineSales.toLocaleString("en-IN")}\n`;
-  text += `📦 Medicine Cost: ₹${report.medicineCost.toLocaleString("en-IN")}\n`;
-  text += `💰 Medicine Profit: ₹${report.medicineProfit.toLocaleString("en-IN")}\n\n`;
+  const fmt = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
-  for (const d of report.doctors) {
-    text += `👨‍⚕️ *${d.doctor.name}* (${d.doctor.profitSharePct}%):\n`;
-    text += `   Consult: ₹${d.consultationShare.toLocaleString("en-IN")}\n`;
-    text += `   Med Profit: ₹${d.medicineProfitShare.toLocaleString("en-IN")}\n`;
-    text += `   *Total: ₹${d.total.toLocaleString("en-IN")}*\n\n`;
-  }
+  let text = `🏥 *${clinicName} — Daily Report*\n`;
+  text += `📅 ${displayDate}\n`;
+  text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // Doctor 1
+  text += `👨‍⚕️ *${report.doctor1.doctorName}*\n`;
+  text += `   Patients: ${report.doctor1.patients}\n`;
+  text += `   Consultation: ${fmt(report.doctor1.consultationFees)}\n`;
+  text += `   Med Sales: ${fmt(report.doctor1.medicineSales)}\n`;
+  text += `   Med Cost: ${fmt(report.doctor1.medicineCost)}\n`;
+  text += `   Med Profit: ${fmt(report.doctor1.medicineProfit)}\n`;
+  text += `   *Total: ${fmt(report.doctor1.total)}*\n\n`;
+
+  // Doctor 2
+  text += `👨‍⚕️ *${report.doctor2.doctorName}*\n`;
+  text += `   Patients: ${report.doctor2.patients}\n`;
+  text += `   Consultation: ${fmt(report.doctor2.consultationFees)}\n`;
+  text += `   Med Sales: ${fmt(report.doctor2.medicineSales)}\n`;
+  text += `   Med Cost: ${fmt(report.doctor2.medicineCost)}\n`;
+  text += `   Med Profit: ${fmt(report.doctor2.medicineProfit)}\n`;
+  text += `   *Total: ${fmt(report.doctor2.total)}*\n\n`;
+
+  // Clinic total
+  text += `━━━━━━━━━━━━━━━━━━━━\n`;
+  text += `🏥 *CLINIC TOTAL*\n`;
+  text += `   Total Patients: ${report.totalPatients}\n`;
+  text += `   Total Collection: ${fmt(report.totalConsultation)}\n`;
+  text += `   Total Med Profit: ${fmt(report.totalMedicineProfit)}\n`;
+  text += `   *Grand Total: ${fmt(report.grandTotal)}*\n`;
 
   if (report.lowStockAlerts.length > 0) {
-    text += `⚠️ *LOW STOCK ALERT:*\n`;
+    text += `\n⚠️ *LOW STOCK:*\n`;
     for (const a of report.lowStockAlerts) {
-      text += `• ${a.name} — ${a.currentStock} units left\n`;
+      text += `• ${a.name} — ${a.currentStock} units\n`;
     }
   }
 
