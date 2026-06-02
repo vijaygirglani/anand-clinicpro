@@ -299,6 +299,13 @@ export default function Home() {
   const [looseAmount, setLooseAmount]       = useState("");
   const [looseSuggestions, setLooseSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number}[]>([]);
   const [looseDropPos, setLooseDropPos] = useState({ top: 0, left: 0, width: 0 });
+
+  // Close dropdowns on scroll
+  useEffect(() => {
+    const close = () => { setMedSuggestions([]); setActiveMedIdx(null); setLooseSuggestions([]); };
+    window.addEventListener('scroll', close, true);
+    return () => window.removeEventListener('scroll', close, true);
+  }, []);
   const refreshLooseSales = () => setLooseSales(getLooseSales(getLiveToday()));
   const looseTodayTotal = looseSales.reduce((s, e) => s + e.amount, 0);
 
@@ -1130,7 +1137,7 @@ export default function Home() {
                                     autoComplete="off"
                                     className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                   {activeMedIdx === i && medSuggestions.length > 0 && (
-                                    <div style={{ position: "fixed", zIndex: 99999, backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 10px 25px rgba(0,0,0,0.15)", minWidth: "320px", maxHeight: "240px", overflowY: "auto" }}
+                                    <div style={{ position: "fixed", zIndex: 99999, backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 10px 25px rgba(0,0,0,0.15)", width: Math.max(dropdownPos.width, 320) + "px", maxHeight: "240px", overflowY: "auto", top: dropdownPos.top + "px", left: dropdownPos.left + "px" }}
                                       id={`med-dropdown-${i}`}>
                                       {medSuggestions.map((s, si) => (
                                         <button key={si} type="button"
