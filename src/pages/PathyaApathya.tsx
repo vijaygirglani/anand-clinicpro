@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { getSettings, getActiveDoctor } from "@/lib/settings";
 import { Layout } from "@/components/Layout";
 import { Printer, Search, BookOpen, ChevronDown, ChevronRight, Share2, User, X } from "lucide-react";
 import { format } from "date-fns";

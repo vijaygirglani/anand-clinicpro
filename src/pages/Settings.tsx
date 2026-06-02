@@ -29,7 +29,7 @@ export default function Settings({ onLogout }: Props) {
   const greenInput = "mt-1.5 w-full border-2 border-emerald-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 bg-white transition-colors";
 
   return (
-    <Layout onSwitchDoctor={onLogout}>
+    <Layout>
       <div className="max-w-2xl mx-auto space-y-6">
 
         <div className="flex items-center justify-between">

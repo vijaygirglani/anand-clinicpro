@@ -140,6 +140,7 @@ const editSchema = z.object({
   advice: z.string().optional(),
   reports: z.string().optional(),
   fees: z.coerce.number().optional(),
+  doctorId: z.number().optional(),
 });
 
 export default function AyurvedicRegister() {
@@ -168,7 +169,7 @@ export default function AyurvedicRegister() {
 
   useEffect(() => { refresh(); refreshPending(); }, [refresh]);
 
-  const editForm = useForm({ resolver: zodResolver(editSchema), values: editingPatient || {} });
+  const editForm = useForm<z.infer<typeof editSchema>>({ resolver: zodResolver(editSchema), values: editingPatient ? editingPatient as z.infer<typeof editSchema> : undefined });
 
   const handleExport = () => {
     if (!stats?.patients || stats.patients.length === 0) {

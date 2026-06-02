@@ -24,8 +24,10 @@ export default function Setup({ onDone }: Props) {
       clinicPhone: clinicPhone.trim(),
       doctor1Name: doctor1Name.trim(),
       doctor1Designation: doctor1Designation.trim(),
+      doctor1Password: "",
       doctor2Name: doctor2Name.trim(),
       doctor2Designation: doctor2Designation.trim(),
+      doctor2Password: "",
     });
     onDone();
   };

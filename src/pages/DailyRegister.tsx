@@ -42,6 +42,7 @@ const editSchema = z.object({
   advice: z.string().optional(),
   reports: z.string().optional(),
   fees: z.coerce.number().optional(),
+  doctorId: z.number().optional(),
 });
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -75,7 +76,7 @@ export default function DailyRegister() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const editForm = useForm({ resolver: zodResolver(editSchema), values: editingPatient || {} });
+  const editForm = useForm<z.infer<typeof editSchema>>({ resolver: zodResolver(editSchema), values: editingPatient ? editingPatient as z.infer<typeof editSchema> : undefined });
 
   const filteredPatients = (stats?.patients || []).filter(p => {
     if (filterType === "all") return true;
