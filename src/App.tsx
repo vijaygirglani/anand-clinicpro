@@ -18,6 +18,7 @@ import DailyReport from "@/pages/DailyReport";
 import NotFound from "@/pages/not-found";
 
 import { isSetupDone, getActiveSession, logout } from "@/lib/settings";
+import { initElectronStorage } from "@/lib/storage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 5 * 60 * 1000, retry: 1 } },
@@ -52,7 +53,27 @@ function AppRoutes({ onSwitch }: { onSwitch: () => void }) {
 }
 
 export default function App() {
-  const [state, setState] = useState<AppState>(getInitialState);
+  const [ready, setReady] = useState(false);
+  const [state, setState] = useState<AppState>("login");
+
+  // Init storage first (critical for Electron)
+  useState(() => {
+    initElectronStorage().then(() => {
+      setState(getInitialState());
+      setReady(true);
+    });
+  });
+
+  if (!ready) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <span className="text-white font-bold text-2xl">CP</span>
+        </div>
+        <p className="text-slate-500 text-sm">Loading ClinicPro...</p>
+      </div>
+    </div>
+  );
 
   return (
     <QueryClientProvider client={queryClient}>

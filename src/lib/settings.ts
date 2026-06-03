@@ -1,3 +1,4 @@
+import { storage } from "./storage";
 // ClinicPro — Clinic & Doctor Settings
 
 export interface ClinicSettings {
@@ -36,14 +37,14 @@ const DEFAULT_SETTINGS: ClinicSettings = {
 
 export function getSettings(): ClinicSettings {
   try {
-    const stored = localStorage.getItem(SETTINGS_KEY);
+    const stored = storage.getItem(SETTINGS_KEY);
     return stored ? { ...DEFAULT_SETTINGS, ...JSON.parse(stored) } : DEFAULT_SETTINGS;
   } catch { return DEFAULT_SETTINGS; }
 }
 
 export function saveSettings(settings: Partial<ClinicSettings>) {
   const current = getSettings();
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...current, ...settings }));
+  storage.setItem(SETTINGS_KEY, JSON.stringify({ ...current, ...settings }));
 }
 
 export function isSetupDone(): boolean {
@@ -60,7 +61,7 @@ export function loginWithPassword(doctorId: 1 | 2, password: string): boolean {
   const correctPwd = doctorId === 1 ? s.doctor1Password : s.doctor2Password;
   // If no password set, allow blank
   if (correctPwd && correctPwd !== password) return false;
-  localStorage.setItem(SESSION_KEY, JSON.stringify({
+  storage.setItem(SESSION_KEY, JSON.stringify({
     doctorId,
     loginTime: new Date().toISOString(),
   }));
@@ -68,19 +69,19 @@ export function loginWithPassword(doctorId: 1 | 2, password: string): boolean {
 }
 
 export function login(doctorId: 1 | 2) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({
+  storage.setItem(SESSION_KEY, JSON.stringify({
     doctorId,
     loginTime: new Date().toISOString(),
   }));
 }
 
 export function logout() {
-  localStorage.removeItem(SESSION_KEY);
+  storage.removeItem(SESSION_KEY);
 }
 
 export function getActiveSession(): ActiveSession | null {
   try {
-    const stored = localStorage.getItem(SESSION_KEY);
+    const stored = storage.getItem(SESSION_KEY);
     return stored ? JSON.parse(stored) : null;
   } catch { return null; }
 }

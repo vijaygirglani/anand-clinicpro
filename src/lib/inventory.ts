@@ -1,3 +1,4 @@
+import { storage } from "./storage";
 // ClinicPro — Inventory Library
 // SINGLE SOURCE OF TRUTH: Purchase Bills drive everything
 // Stock is ALWAYS calculated live from purchase bills minus patient prescriptions
@@ -186,7 +187,7 @@ export function calcLandingCost(params: {
 
 export function getPurchaseBills(): PurchaseBill[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(PURCHASE_BILLS_KEY) || "[]");
+    const raw = JSON.parse(storage.getItem(PURCHASE_BILLS_KEY) || "[]");
     // Normalize each bill - handle both old and new format
     return raw.map((bill: any) => ({
       ...bill,
@@ -225,12 +226,12 @@ export function savePurchaseBill(bill: PurchaseBill): void {
   const idx = bills.findIndex(b => b.id === bill.id);
   if (idx >= 0) bills[idx] = bill;
   else bills.push(bill);
-  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
 export function deletePurchaseBill(id: string): void {
   const bills = getPurchaseBills().filter(b => b.id !== id);
-  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
 export function addPaymentToBill(billId: string, amount: number, date: string, note = ""): void {
@@ -242,15 +243,15 @@ export function addPaymentToBill(billId: string, amount: number, date: string, n
   bill.paymentStatus = bill.amountPaid >= bill.grandTotal ? "paid"
     : bill.amountPaid > 0 ? "partial" : "unpaid";
   bill.paymentDate = date;
-  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
   // Also save payment record
   const payments = getBillPayments();
   payments.push({ id: newId(), billId, amount, date, note, createdAt: new Date().toISOString() });
-  localStorage.setItem(BILL_PAYMENTS_KEY, JSON.stringify(payments));
+  storage.setItem(BILL_PAYMENTS_KEY, JSON.stringify(payments));
 }
 
 export function getBillPayments(): BillPayment[] {
-  try { return JSON.parse(localStorage.getItem(BILL_PAYMENTS_KEY) || "[]"); }
+  try { return JSON.parse(storage.getItem(BILL_PAYMENTS_KEY) || "[]"); }
   catch { return []; }
 }
 
@@ -259,14 +260,14 @@ export function getBillPayments(): BillPayment[] {
 // ═══════════════════════════════════════════════════════════════
 
 export function getStockAdjustments(): StockAdjustment[] {
-  try { return JSON.parse(localStorage.getItem(STOCK_ADJUSTMENTS_KEY) || "[]"); }
+  try { return JSON.parse(storage.getItem(STOCK_ADJUSTMENTS_KEY) || "[]"); }
   catch { return []; }
 }
 
 export function addStockAdjustment(adj: Omit<StockAdjustment, "id"|"createdAt">): void {
   const adjs = getStockAdjustments();
   adjs.push({ ...adj, id: newId(), createdAt: new Date().toISOString() });
-  localStorage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(adjs));
+  storage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(adjs));
 }
 
 // Calculate tablets used for a specific batch from patient bills
@@ -417,7 +418,7 @@ export function discontinueBatch(billId: string, batchNo: string, medicineName: 
   const item = bill.items.find(i => i.batchNo === batchNo && 
     i.medicineName.toLowerCase() === medicineName.toLowerCase());
   if (item) { item.discontinued = true; }
-  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
 // Re-activate a discontinued batch
@@ -431,7 +432,7 @@ export function reactivateBatch(billId: string, batchNo: string, medicineName: s
     item.discontinued = false;
     item.alertDismissed = false;
   }
-  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
 // Stock valuation
@@ -492,7 +493,7 @@ export function getSupplierSummary(): SupplierSummary[] {
 // ═══════════════════════════════════════════════════════════════
 
 export function getPatientBills(): PatientBill[] {
-  try { return JSON.parse(localStorage.getItem(PATIENT_BILLS_KEY) || "[]"); }
+  try { return JSON.parse(storage.getItem(PATIENT_BILLS_KEY) || "[]"); }
   catch { return []; }
 }
 
@@ -501,12 +502,12 @@ export function savePatientBill(bill: PatientBill): void {
   const idx = bills.findIndex(b => b.id === bill.id);
   if (idx >= 0) bills[idx] = bill;
   else bills.push(bill);
-  localStorage.setItem(PATIENT_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PATIENT_BILLS_KEY, JSON.stringify(bills));
 }
 
 export function deletePatientBill(patientId: number): void {
   const bills = getPatientBills().filter(b => b.patientId !== patientId);
-  localStorage.setItem(PATIENT_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PATIENT_BILLS_KEY, JSON.stringify(bills));
 }
 
 export function getPatientBillByPatientId(patientId: number): PatientBill | null {
@@ -534,7 +535,7 @@ const DEFAULT_CATEGORIES: ExpenseCategory[] = [
 
 export function getExpenseCategories(): ExpenseCategory[] {
   try {
-    const stored = localStorage.getItem(EXPENSE_CATS_KEY);
+    const stored = storage.getItem(EXPENSE_CATS_KEY);
     return stored ? JSON.parse(stored) : DEFAULT_CATEGORIES;
   } catch { return DEFAULT_CATEGORIES; }
 }
@@ -544,16 +545,16 @@ export function saveExpenseCategory(cat: ExpenseCategory): void {
   const idx = cats.findIndex(c => c.id === cat.id);
   if (idx >= 0) cats[idx] = cat;
   else cats.push(cat);
-  localStorage.setItem(EXPENSE_CATS_KEY, JSON.stringify(cats));
+  storage.setItem(EXPENSE_CATS_KEY, JSON.stringify(cats));
 }
 
 export function deleteExpenseCategory(id: string): void {
   const cats = getExpenseCategories().filter(c => c.id !== id);
-  localStorage.setItem(EXPENSE_CATS_KEY, JSON.stringify(cats));
+  storage.setItem(EXPENSE_CATS_KEY, JSON.stringify(cats));
 }
 
 export function getExpenses(): Expense[] {
-  try { return JSON.parse(localStorage.getItem(EXPENSES_KEY) || "[]"); }
+  try { return JSON.parse(storage.getItem(EXPENSES_KEY) || "[]"); }
   catch { return []; }
 }
 
@@ -562,12 +563,12 @@ export function saveExpense(expense: Expense): void {
   const idx = expenses.findIndex(e => e.id === expense.id);
   if (idx >= 0) expenses[idx] = expense;
   else expenses.push(expense);
-  localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses));
+  storage.setItem(EXPENSES_KEY, JSON.stringify(expenses));
 }
 
 export function deleteExpense(id: string): void {
   const expenses = getExpenses().filter(e => e.id !== id);
-  localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses));
+  storage.setItem(EXPENSES_KEY, JSON.stringify(expenses));
 }
 
 export function getExpensesByDateRange(from: string, to: string): Expense[] {
@@ -681,12 +682,12 @@ export function exportInventoryBackup(): string {
 export function importInventoryBackup(json: string): { success: boolean; message: string } {
   try {
     const data = JSON.parse(json);
-    if (data.purchaseBills) localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(data.purchaseBills));
-    if (data.patientBills)  localStorage.setItem(PATIENT_BILLS_KEY, JSON.stringify(data.patientBills));
-    if (data.expenses)      localStorage.setItem(EXPENSES_KEY, JSON.stringify(data.expenses));
-    if (data.expenseCategories) localStorage.setItem(EXPENSE_CATS_KEY, JSON.stringify(data.expenseCategories));
-    if (data.billPayments)  localStorage.setItem(BILL_PAYMENTS_KEY, JSON.stringify(data.billPayments));
-    if (data.stockAdjustments) localStorage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(data.stockAdjustments));
+    if (data.purchaseBills) storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(data.purchaseBills));
+    if (data.patientBills)  storage.setItem(PATIENT_BILLS_KEY, JSON.stringify(data.patientBills));
+    if (data.expenses)      storage.setItem(EXPENSES_KEY, JSON.stringify(data.expenses));
+    if (data.expenseCategories) storage.setItem(EXPENSE_CATS_KEY, JSON.stringify(data.expenseCategories));
+    if (data.billPayments)  storage.setItem(BILL_PAYMENTS_KEY, JSON.stringify(data.billPayments));
+    if (data.stockAdjustments) storage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(data.stockAdjustments));
     return { success: true, message: "Inventory data restored successfully" };
   } catch { return { success: false, message: "Failed to restore inventory data" }; }
 }
@@ -701,7 +702,7 @@ export function setBatchReorderLevel(billId: string, batchNo: string, medicineNa
     item.reorderLevel = level;
     item.alertDismissed = false; // Reset dismiss so bell reappears if still low stock
   }
-  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
 // Dismiss low stock alert for a batch
@@ -711,5 +712,5 @@ export function dismissStockAlert(billId: string, batchNo: string, medicineName:
   if (!bill) return;
   const item = bill.items.find(i => i.batchNo === batchNo && i.medicineName.toLowerCase() === medicineName.toLowerCase());
   if (item) item.alertDismissed = true;
-  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
