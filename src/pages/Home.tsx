@@ -298,6 +298,15 @@ export default function Home() {
 
   const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
 
+  // Check if medicine has multiple batches (different MRPs)
+  const hasMultipleBatches = (medicineName: string): boolean => {
+    if (!medicineName) return false;
+    const batches = getAvailableBatchesForMedicine(medicineName);
+    if (batches.length <= 1) return false;
+    const mrps = new Set(batches.map(b => b.mrpPerTablet.toFixed(2)));
+    return mrps.size > 1;
+  };
+
   const getMedSuggestions = (query: string) => {
     if (!query || query.length < 1) return [];
     const results = searchMedicineNames(query);
@@ -1169,10 +1178,18 @@ export default function Home() {
                       </thead>
                       <tbody>
                         {medRows.map((r, i) => (
-                            <tr key={i} className={`border-b border-slate-200 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"} hover:bg-blue-50/40 transition-colors`}>
+                            <tr key={i} className={`border-b border-slate-200 transition-colors hover:bg-blue-50/40
+                              ${hasMultipleBatches(r.medicineName)
+                                ? "bg-orange-50/60 border-l-2 border-l-orange-400"
+                                : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
                               <td className="px-3 py-1 text-slate-500 text-xs font-medium">{i + 1}</td>
                               <td className="px-2 py-1">
                                 <div className="relative">
+                                  {hasMultipleBatches(r.medicineName) && (
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs bg-orange-100 text-orange-600 font-semibold px-1.5 py-0.5 rounded-full z-10 pointer-events-none">
+                                      2 MRP
+                                    </span>
+                                  )}
                                   <input value={r.medicineName}
                                     onChange={e => {
                                       updateMedRow(i, "medicineName", e.target.value);
