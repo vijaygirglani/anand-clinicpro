@@ -55,7 +55,7 @@ export interface MedicineItem {
   packSize: number;       // tablets per pack (e.g. 10)
   reorderLevel: number;   // alert when stock <= this (in tablets)
   currentStock: number;   // total TABLETS on hand
-  landingCost: number;    // landing cost per TABLET
+  landingCost: number;    // landing cost per PACK (divide by packSize for per-tablet)
   createdAt: string;
 }
 
@@ -648,18 +648,24 @@ export function addPurchaseBill(data: Omit<PurchaseBill, "id" | "createdAt">): P
       m.name.toLowerCase() === item.medicineName.trim().toLowerCase()
     );
     if (idx !== -1) {
-      const tabletsReceived = item.totalTabletsReceived || item.totalQtyReceived;
+      const tabletsReceived = item.totalTabletsReceived || (item.totalQtyReceived * (item.packSize || 1));
       const oldStock = medicines[idx].currentStock; // in tablets
-      const oldCost = medicines[idx].landingCost || 0; // per tablet
+      const oldPackSize = medicines[idx].packSize || 1;
+      const oldCostPerPack = medicines[idx].landingCost || 0;
+      const oldCostPerTab = oldPackSize > 0 ? oldCostPerPack / oldPackSize : oldCostPerPack;
+      const newPackSize = item.packSize || 1;
+      const newCostPerPack = item.landingCostPerUnit; // cost per pack
+      const newCostPerTab = newPackSize > 0 ? newCostPerPack / newPackSize : newCostPerPack;
       const newStock = oldStock + tabletsReceived;
-      const landingPerTablet = item.landingCostPerTablet || item.landingCostPerUnit;
-      const newCost = newStock > 0
-        ? ((oldStock * oldCost) + (tabletsReceived * landingPerTablet)) / newStock
-        : landingPerTablet;
+      // Weighted average cost per tablet
+      const avgCostPerTab = newStock > 0
+        ? ((oldStock * oldCostPerTab) + (tabletsReceived * newCostPerTab)) / newStock
+        : newCostPerTab;
+      // Store as cost per PACK
       medicines[idx].currentStock = newStock;
-      medicines[idx].landingCost = Math.round(newCost * 10000) / 10000;
-      medicines[idx].mrpPerTablet = item.mrpPerTablet || item.mrp;
-      medicines[idx].packSize = item.packSize || 1;
+      medicines[idx].packSize = newPackSize;
+      medicines[idx].landingCost = Math.round(avgCostPerTab * newPackSize * 10000) / 10000;
+      medicines[idx].mrpPerTablet = item.mrp / newPackSize;
       saveMedicines(medicines); // save immediately after each update
     }
   }
@@ -932,7 +938,7 @@ export function deductMedicineStock(items: { medicineName: string; qty: number; 
         packSize: 1,
         reorderLevel: 5,
         currentStock: 0,
-        landingCost: item.landingCost,
+        landingCost: item.landingCost, // stored as per-pack
         createdAt: new Date().toISOString(),
       };
       medicines.push(newMed);
