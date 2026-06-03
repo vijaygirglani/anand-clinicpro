@@ -450,6 +450,8 @@ export interface SupplierSummary {
   amountPaid: number;
   amountPending: number;
   lastBillDate: string;
+  oldestUnpaidDate: string;  // oldest unpaid bill date
+  overdueDays: number;       // days since oldest unpaid bill
 }
 
 export function getSupplierSummary(): SupplierSummary[] {
@@ -458,7 +460,7 @@ export function getSupplierSummary(): SupplierSummary[] {
   for (const bill of bills) {
     const key = bill.supplierName.toLowerCase();
     if (!map.has(key)) {
-      map.set(key, { supplierName: bill.supplierName, totalBills: 0, totalAmount: 0, amountPaid: 0, amountPending: 0, lastBillDate: "" });
+      map.set(key, { supplierName: bill.supplierName, totalBills: 0, totalAmount: 0, amountPaid: 0, amountPending: 0, lastBillDate: "", oldestUnpaidDate: "", overdueDays: 0 });
     }
     const s = map.get(key)!;
     s.totalBills++;
@@ -467,7 +469,22 @@ export function getSupplierSummary(): SupplierSummary[] {
     s.amountPending += bill.amountPending;
     if (!s.lastBillDate || bill.billDate > s.lastBillDate) s.lastBillDate = bill.billDate;
   }
-  return Array.from(map.values()).sort((a, b) => b.totalAmount - a.totalAmount);
+  // Calculate overdue days for each supplier
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  return Array.from(map.values()).map(s => {
+    // Find oldest unpaid bill for this supplier
+    const unpaidBills = bills.filter(b => 
+      b.supplierName.toLowerCase() === s.supplierName.toLowerCase() && 
+      b.paymentStatus !== "paid" && b.amountPending > 0
+    );
+    const oldestUnpaid = unpaidBills.sort((a,b) => a.billDate.localeCompare(b.billDate))[0];
+    const oldestDate = oldestUnpaid?.billDate || "";
+    const overdueDays = oldestDate 
+      ? Math.floor((today.getTime() - new Date(oldestDate).getTime()) / (1000*60*60*24))
+      : 0;
+    return { ...s, oldestUnpaidDate: oldestDate, overdueDays };
+  }).sort((a, b) => b.totalAmount - a.totalAmount);
 }
 
 // ═══════════════════════════════════════════════════════════════

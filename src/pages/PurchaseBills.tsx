@@ -196,7 +196,17 @@ export default function PurchaseBills() {
   }}
   placeholder="Medicine name" className={inputCls} autoComplete="off" /></td>
                         <td className="px-2 py-1 w-20"><input value={r.batchNo} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,batchNo:e.target.value}:x))} placeholder="Batch" className={inputCls}/></td>
-                        <td className="px-2 py-1 w-20"><input value={r.expiryDate} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,expiryDate:e.target.value}:x))} placeholder="MM/YY" className={inputCls}/></td>
+                        <td className="px-2 py-1 w-20"><input value={r.expiryDate}
+  onChange={e => {
+    let v = e.target.value.replace(/[^0-9/]/g, "");
+    // Auto-insert slash: "626" → "6/26", "1226" → "12/26"
+    if (!v.includes("/")) {
+      if (v.length === 3) v = v[0] + "/" + v.slice(1);       // 626 → 6/26
+      else if (v.length === 4) v = v.slice(0,2) + "/" + v.slice(2); // 1226 → 12/26
+    }
+    setRows(p=>p.map((x,idx)=>idx===i?{...x,expiryDate:v}:x));
+  }}
+  placeholder="MM/YY" maxLength={5} className={inputCls}/></td>
                         <td className="px-2 py-1 w-14"><input type="number" value={r.packSize} min={1} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,packSize:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
                         <td className="px-2 py-1 w-20"><input type="number" value={r.mrpPerPack||""} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,mrpPerPack:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
                         <td className="px-2 py-1 w-16"><input type="number" value={r.qtyPacksPaid} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,qtyPacksPaid:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
@@ -341,8 +351,15 @@ export default function PurchaseBills() {
                     <td className="px-4 py-3 text-slate-500">{s.lastBillDate ? s.lastBillDate ? format(new Date(s.lastBillDate),"dd MMM yyyy") : "—" : "—"}</td>
                     <td className="px-4 py-3">
                       {s.amountPending === 0
-                        ? <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">All Paid</span>
-                        : <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full">₹{s.amountPending.toLocaleString("en-IN")} due</span>}
+                        ? <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">✓ All Paid</span>
+                        : <div>
+                            <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full">₹{s.amountPending.toLocaleString("en-IN")} due</span>
+                            {s.overdueDays > 0 && (
+                              <div className="text-xs text-orange-600 mt-1 font-medium">
+                                ⏰ {s.overdueDays} days overdue
+                              </div>
+                            )}
+                          </div>}
                     </td>
                   </tr>
                 ))}
