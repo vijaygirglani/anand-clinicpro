@@ -12,9 +12,6 @@ export default function DailyReport() {
   const settings = getSettings();
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  // Get patients from store for consultation fees
-  const { getPatientsByDate } = require("@/lib/store");
-  
   // Use inventory-based profit report (reads from cp_patient_bills)
   const patientBills = getPatientBillsByDate(date);
   
