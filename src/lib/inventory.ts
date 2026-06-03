@@ -193,13 +193,15 @@ export function getPurchaseBills(): PurchaseBill[] {
       amountPending: bill.amountPending ?? bill.grandTotal ?? 0,
       items: (bill.items || []).map((item: any) => {
         // Normalize item fields from old format
-        const packSize = item.packSize || 1;
-        const mrpPerPack = item.mrpPerPack || item.mrp || 0;
-        const mrpPerTablet = item.mrpPerTablet || mrpPerPack / packSize;
-        const totalPacksReceived = item.totalPacksReceived || item.totalQtyReceived || 0;
-        const totalTabletsReceived = item.totalTabletsReceived || totalPacksReceived * packSize;
-        const landingCostPerPack = item.landingCostPerPack || item.landingCostPerUnit || 0;
-        const landingCostPerTablet = item.landingCostPerTablet || landingCostPerPack / packSize;
+        const packSize = Number(item.packSize) || 1;
+        const mrpPerPack = Number(item.mrpPerPack || item.mrp || 0);
+        // ALWAYS recalculate per-tablet values from pack size - never trust stored
+        const mrpPerTablet = packSize > 1 ? mrpPerPack / packSize : mrpPerPack;
+        const totalPacksReceived = Number(item.totalPacksReceived || item.totalQtyReceived || 0);
+        const totalTabletsReceived = totalPacksReceived * packSize;
+        const landingCostPerPack = Number(item.landingCostPerPack || item.landingCostPerUnit || 0);
+        // ALWAYS recalculate per-tablet landing cost from pack size
+        const landingCostPerTablet = packSize > 1 ? landingCostPerPack / packSize : landingCostPerPack;
         return {
           ...item,
           packSize, mrpPerPack, mrpPerTablet,
