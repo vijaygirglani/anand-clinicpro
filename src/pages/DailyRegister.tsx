@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
 import {
-  getDailyStats, updatePatient, deletePatient, getAllDates, restoreStockForPatient,
+  getDailyStats, updatePatient, deletePatient, getAllDates,
   exportBackup, importBackup, addPatient, getMonthlyStats,
   type Patient, type DailyStats,
 } from "@/lib/store";
@@ -22,6 +22,7 @@ function getLooseSalesForDate(date: string): LooseSaleEntry[] {
 import { exportToExcel, parseExcelFile } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { deletePatientBill } from "@/lib/inventory";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -166,7 +167,7 @@ export default function DailyRegister() {
 
   const handleDelete = (id: number) => {
     if (!confirm("Delete this record? Medicine stock will be restored.")) return;
-    restoreStockForPatient(id); // restore medicine stock first
+    deletePatientBill(id); // removes patient bill → stock auto-restores (live calculation)
     deletePatient(id);
     toast({ title: "Deleted — stock restored" }); refresh();
   };

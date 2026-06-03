@@ -6,9 +6,7 @@ import { Layout } from "@/components/Layout";
 import {
   addPatient, lookupByMobile, lookupByName, findComplaintCode,
   getNextPatientNo, getNextCaseNo, lookupByComplaint, lookupByAddress,
-  searchPatientSuggestions, checkMedicineStock, deductMedicineStock,
-  getMedicineNamesFromPurchases, getMedicines, addMedicineBill,
-  getMrpPerTablet, getLandingCostPerTablet,
+  searchPatientSuggestions,
   type Patient, type PatientSuggestion,
 } from "@/lib/store";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
@@ -46,6 +44,11 @@ function removeLooseSale(id: string) {
 function genSaleId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 import { useToast } from "@/hooks/use-toast";
 import { getActiveDoctor } from "@/lib/settings";
+import {
+  searchMedicineNames, getAvailableBatchesForMedicine,
+  savePatientBill, deletePatientBill, newId,
+  type PatientBill, type PatientMedicineItem,
+} from "@/lib/inventory";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -265,9 +268,16 @@ export default function Home() {
   const [feesMarkedPending, setFeesMarkedPending] = useState(false);
 
   // ── Medicine Table state ──
-  interface MedRow { medicineName: string; qty: number; mrp: number; }
-  const [medRows, setMedRows] = useState<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0 }]);
-  const medRowsRef = useRef<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0 }]);
+  interface MedRow {
+    medicineName: string;
+    qty: number;
+    mrp: number;
+    batchNo: string;
+    billId: string;
+    landingCostPerTablet: number;
+  }
+  const [medRows, setMedRows] = useState<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+  const medRowsRef = useRef<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
   const setMedRowsSync = (rows: MedRow[] | ((prev: MedRow[]) => MedRow[])) => {
     setMedRows(prev => {
       const next = typeof rows === "function" ? rows(prev) : rows;
@@ -278,23 +288,24 @@ export default function Home() {
   const [otherCharges, setOtherCharges] = useState<number>(0);
   const medGross = medRows.reduce((s, r) => s + r.mrp * r.qty, 0);
   const billAmount = medGross + otherCharges;
-  const medNames = getMedicineNamesFromPurchases();
+  // medNames no longer needed - using searchMedicineNames from inventory
   const activeDoctor = getActiveDoctor();
 
-  const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number}[]>([]);
+  const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number; bestBatch: any}[]>([]);
   const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 1, mrp: 0 }]);
+  const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
 
   const getMedSuggestions = (query: string) => {
-    if (!query || query.length < 2) return [];
-    const q = query.toLowerCase();
-    return getMedicines()
-      .filter(m => m.name.toLowerCase().includes(q))
-      .map(m => ({ name: m.name, mrpPerTablet: getMrpPerTablet(m), currentStock: m.currentStock }))
-      .slice(0, 8);
+    if (!query || query.length < 1) return [];
+    return searchMedicineNames(query).map(r => ({
+      name: r.name,
+      mrpPerTablet: r.bestBatch?.mrpPerTablet || 0,
+      currentStock: r.batches.reduce((s, b) => s + b.tabletsAvailable, 0),
+      bestBatch: r.bestBatch,
+    }));
   };
   const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
     setMedRowsSync(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
@@ -306,7 +317,7 @@ export default function Home() {
   const [looseSales, setLooseSales]         = useState<LooseSaleEntry[]>(() => getLooseSales(getLiveToday()));
   const [looseProduct, setLooseProduct]     = useState("");
   const [looseAmount, setLooseAmount]       = useState("");
-  const [looseSuggestions, setLooseSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number}[]>([]);
+  const [looseSuggestions, setLooseSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number; bestBatch: any}[]>([]);
   const [looseDropPos, setLooseDropPos] = useState({ top: 0, left: 0, width: 0 });
 
   // Close dropdowns on scroll
@@ -397,14 +408,16 @@ export default function Home() {
         form.setValue("treatment", codeRecord.treatment);
         // Auto-fill medicine rows from complaint code template
         if (codeRecord.medicines && codeRecord.medicines.length > 0) {
-          const medicines = getMedicines();
           setMedRowsSync(codeRecord.medicines.map(m => {
-            // Get MRP from purchase bills / medicine master
-            const med = medicines.find(med => med.name.toLowerCase() === m.medicineName.toLowerCase());
+            const results = searchMedicineNames(m.medicineName);
+            const match = results.find(r => r.name.toLowerCase() === m.medicineName.toLowerCase());
             return {
               medicineName: m.medicineName,
               qty: m.defaultQty,
-              mrp: med?.mrpPerTablet || med?.mrp || 0,
+              mrp: match?.bestBatch?.mrpPerTablet || 0,
+              batchNo: match?.bestBatch?.batchNo || "",
+              billId: match?.bestBatch?.billId || "",
+              landingCostPerTablet: match?.bestBatch?.landingCostPerTablet || 0,
             };
           }));
         }
@@ -591,13 +604,17 @@ export default function Home() {
 
     // Stock check before saving
     const validMedRows = medRowsRef.current.filter(r => r.medicineName.trim() && r.qty > 0);
+    // Stock check using new inventory system
     if (validMedRows.length > 0) {
-      const stockCheck = checkMedicineStock(validMedRows.map(r => ({ medicineName: r.medicineName, qty: r.qty })));
-      if (!stockCheck.ok) {
-        stockCheck.errors.forEach(e => {
-          toast({ title: `Insufficient stock: ${e.medicineName}`, description: `Required: ${e.required}, Available: ${e.available}`, variant: "destructive" });
-        });
-        return;
+      for (const r of validMedRows) {
+        if (r.billId) {
+          const batches = getAvailableBatchesForMedicine(r.medicineName);
+          const available = batches.reduce((s, b) => s + b.tabletsAvailable, 0);
+          if (available < r.qty) {
+            toast({ title: `Insufficient stock: ${r.medicineName}`, description: `Required: ${r.qty}, Available: ${available}`, variant: "destructive" });
+            return;
+          }
+        }
       }
     }
 
@@ -613,49 +630,36 @@ export default function Home() {
       reports: data.reports || "", fees: finalFees, doctorId: activeDoctor?.id || 1,
       attachments, registerType, visitDate,
     });
-    // Deduct medicine stock + create medicine bill for profit tracking
+    // Save patient bill to inventory system (deducts stock, tracks profit)
     if (validMedRows.length > 0) {
-      const medicines = getMedicines();
-      const saleItems = validMedRows.map(r => {
-        const med = medicines.find(m => m.name.toLowerCase() === r.medicineName.toLowerCase());
-        // landingCost per tablet = landingCost / packSize
-        // Always calculate per-tablet costs using pure functions
-        const landingCostPerTab = med ? getLandingCostPerTablet(med) : 0;
+      const items: PatientMedicineItem[] = validMedRows.map(r => {
         const salePrice = r.mrp * r.qty;
-        const cost = landingCostPerTab * r.qty;
+        const cost = r.landingCostPerTablet * r.qty;
         return {
           medicineName: r.medicineName,
-          qty: r.qty,
-          mrp: r.mrp,
-          landingCost: landingCostPerTab,
+          batchNo: r.batchNo,
+          billId: r.billId,
+          qtyTablets: r.qty,
+          mrpPerTablet: r.mrp,
+          landingCostPerTablet: r.landingCostPerTablet,
           salePrice,
+          cost,
           profit: salePrice - cost,
-          medicineId: med?.id || 0,
         };
       });
-      deductMedicineStock(
-        saleItems.map(s => ({ medicineName: s.medicineName, qty: s.qty, mrp: s.mrp, landingCost: s.landingCost })),
-        saved.name, visitDate
-      );
-      // Create medicine bill for profit tracking in daily report
-      addMedicineBill({
+      const patientBill: PatientBill = {
+        id: newId(),
         patientId: saved.id,
         patientName: saved.name,
         doctorId: activeDoctor?.id || 1,
         billDate: visitDate,
-        items: saleItems.map(s => ({
-          medicineId: s.medicineId,
-          medicineName: s.medicineName,
-          qty: s.qty,
-          mrp: s.mrp,
-          landingCost: s.landingCost,
-          salePrice: s.salePrice,
-          profit: s.profit,
-        })),
-        totalSale: saleItems.reduce((sum, s) => sum + s.salePrice, 0),
-        totalCost: saleItems.reduce((sum, s) => sum + s.landingCost * s.qty, 0),
-        totalProfit: saleItems.reduce((sum, s) => sum + s.profit, 0),
-      });
+        items,
+        totalSale: items.reduce((s, i) => s + i.salePrice, 0),
+        totalCost: items.reduce((s, i) => s + i.cost, 0),
+        totalProfit: items.reduce((s, i) => s + i.profit, 0),
+        createdAt: new Date().toISOString(),
+      };
+      savePatientBill(patientBill);
     }
 
     if (feesMarkedPending && saved.fees > 0) {
@@ -675,7 +679,7 @@ export default function Home() {
     setPatientHistory([]);
     setHistoryName("");
     setHistoryMobile("");
-    setMedRowsSync([{ medicineName: "", qty: 1, mrp: 0 }]);
+    setMedRowsSync([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
     setOtherCharges(0);
     setSelectedPADisease(null);
     setPaMatches([]);
@@ -1169,8 +1173,18 @@ export default function Home() {
                                       if (e.key === "Enter" && medSuggestions.length > 0) {
                                         e.preventDefault();
                                         const s = medSuggestions[0];
-                                        updateMedRow(i, "medicineName", s.name);
-                                        updateMedRow(i, "mrp", s.mrpPerTablet);
+                                        setMedRowsSync(p => p.map((r, idx) => idx === i ? {
+                                          ...r, medicineName: s.name, mrp: s.mrpPerTablet,
+                                          batchNo: s.bestBatch?.batchNo || "",
+                                          billId: s.bestBatch?.billId || "",
+                                          landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
+                                        } : r));
+                                        medRowsRef.current = medRowsRef.current.map((r, idx) => idx === i ? {
+                                          ...r, medicineName: s.name, mrp: s.mrpPerTablet,
+                                          batchNo: s.bestBatch?.batchNo || "",
+                                          billId: s.bestBatch?.billId || "",
+                                          landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
+                                        } : r);
                                         setMedSuggestions([]);
                                         setActiveMedIdx(null);
                                       }
@@ -1185,8 +1199,22 @@ export default function Home() {
                                         <button key={si} type="button"
                                           onMouseDown={(e) => {
                                             e.preventDefault();
-                                            updateMedRow(i, "medicineName", s.name);
-                                            updateMedRow(i, "mrp", s.mrpPerTablet);
+                                            setMedRowsSync(p => p.map((r, idx) => idx === i ? {
+                                              ...r,
+                                              medicineName: s.name,
+                                              mrp: s.mrpPerTablet,
+                                              batchNo: s.bestBatch?.batchNo || "",
+                                              billId: s.bestBatch?.billId || "",
+                                              landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
+                                            } : r));
+                                            medRowsRef.current = medRowsRef.current.map((r, idx) => idx === i ? {
+                                              ...r,
+                                              medicineName: s.name,
+                                              mrp: s.mrpPerTablet,
+                                              batchNo: s.bestBatch?.batchNo || "",
+                                              billId: s.bestBatch?.billId || "",
+                                              landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
+                                            } : r);
                                             setMedSuggestions([]);
                                             setActiveMedIdx(null);
                                           }}
