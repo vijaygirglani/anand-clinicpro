@@ -837,8 +837,8 @@ function addStockLedgerEntry(data: Omit<StockLedgerEntry, "id" | "createdAt">) {
 
 export function getStockValuation(): { atCost: number; atMrp: number; potentialProfit: number } {
   const medicines = getMedicines();
-  const atCost = medicines.reduce((s, m) => s + m.currentStock * m.landingCost, 0);
-  const atMrp = medicines.reduce((s, m) => s + m.currentStock * m.mrp, 0);
+  const atCost = medicines.reduce((s, m) => s + m.currentStock * getLandingCostPerTablet(m), 0);
+  const atMrp = medicines.reduce((s, m) => s + m.currentStock * getMrpPerTablet(m), 0);
   return { atCost: Math.round(atCost), atMrp: Math.round(atMrp), potentialProfit: Math.round(atMrp - atCost) };
 }
 

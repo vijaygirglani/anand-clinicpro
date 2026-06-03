@@ -124,8 +124,8 @@ export default function StockStatus() {
                       <td className="px-4 py-2.5 text-right text-slate-500 text-xs">{m.reorderLevel}</td>
                       <td className="px-4 py-2.5 text-right text-slate-700">₹{mrpPerTab.toFixed(2)}</td>
                       <td className="px-4 py-2.5 text-right text-slate-500 text-xs">₹{m.mrp.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-600">₹{m.landingCost.toFixed(4)}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800">₹{(m.currentStock * m.landingCost).toFixed(0)}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-600">₹{getLandingCostPerTablet(m).toFixed(4)}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800">₹{(m.currentStock * getLandingCostPerTablet(m)).toFixed(0)}</td>
                       <td className="px-4 py-2.5 text-center">
                         {exp ? (
                           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expiryColor(exp.daysToExpiry)}`}>
