@@ -678,7 +678,10 @@ export function setBatchReorderLevel(billId: string, batchNo: string, medicineNa
   const bill = bills.find(b => b.id === billId);
   if (!bill) return;
   const item = bill.items.find(i => i.batchNo === batchNo && i.medicineName.toLowerCase() === medicineName.toLowerCase());
-  if (item) item.reorderLevel = level;
+  if (item) {
+    item.reorderLevel = level;
+    item.alertDismissed = false; // Reset dismiss so bell reappears if still low stock
+  }
   localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
