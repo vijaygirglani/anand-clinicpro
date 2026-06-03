@@ -136,10 +136,7 @@ export default function DailyReport() {
                 <span className="flex items-center gap-2 text-sm text-slate-600"><IndianRupee className="w-4 h-4 text-blue-400" />Consultation</span>
                 <span className="font-bold text-slate-900">{fmt(report.doctor1.consultationFees)}</span>
               </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="flex items-center gap-2 text-sm text-slate-600"><Pill className="w-4 h-4 text-blue-400" />Med Sales</span>
-                <span className="font-bold text-slate-900">{fmt(report.doctor1.medicineSales)}</span>
-              </div>
+              
               <div className="flex justify-between items-center py-2 border-b border-slate-100">
                 <span className="flex items-center gap-2 text-sm text-slate-600"><Pill className="w-4 h-4 text-slate-400" />Med Cost</span>
                 <span className="font-semibold text-slate-500">{fmt(report.doctor1.medicineCost)}</span>
@@ -171,10 +168,7 @@ export default function DailyReport() {
                 <span className="flex items-center gap-2 text-sm text-slate-600"><IndianRupee className="w-4 h-4 text-emerald-400" />Consultation</span>
                 <span className="font-bold text-slate-900">{fmt(report.doctor2.consultationFees)}</span>
               </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                <span className="flex items-center gap-2 text-sm text-slate-600"><Pill className="w-4 h-4 text-emerald-400" />Med Sales</span>
-                <span className="font-bold text-slate-900">{fmt(report.doctor2.medicineSales)}</span>
-              </div>
+              
               <div className="flex justify-between items-center py-2 border-b border-slate-100">
                 <span className="flex items-center gap-2 text-sm text-slate-600"><Pill className="w-4 h-4 text-slate-400" />Med Cost</span>
                 <span className="font-semibold text-slate-500">{fmt(report.doctor2.medicineCost)}</span>

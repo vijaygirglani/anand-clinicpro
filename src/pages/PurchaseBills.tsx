@@ -14,11 +14,26 @@ interface RowDraft {
   packSize: number; mrpPerPack: number;
   qtyPacksPaid: number; qtyPacksFree: number;
   ratePerPack: number; discountPct: number; gstPct: number;
+  reorderLevel: number;
 }
 const emptyRow = (): RowDraft => ({
   medicineName: "", batchNo: "", expiryDate: "", packSize: 1, mrpPerPack: 0,
   qtyPacksPaid: 1, qtyPacksFree: 0, ratePerPack: 0, discountPct: 0, gstPct: 5,
+  reorderLevel: 10,
 });
+
+// Get saved reorder level for a medicine from previous purchase bills
+function getSavedReorderLevel(medicineName: string): number {
+  if (!medicineName.trim()) return 10;
+  const bills = getPurchaseBills();
+  for (let i = bills.length - 1; i >= 0; i--) {
+    const item = bills[i].items.find(it => 
+      it.medicineName.toLowerCase() === medicineName.toLowerCase() && it.reorderLevel
+    );
+    if (item?.reorderLevel) return item.reorderLevel;
+  }
+  return 10;
+}
 
 const inputCls = "w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[rgb(var(--primary))/50] bg-white";
 
@@ -62,6 +77,7 @@ export default function PurchaseBills() {
       mrpPerPack: item.mrpPerPack, qtyPacksPaid: item.qtyPacksPaid,
       qtyPacksFree: item.qtyPacksFree, ratePerPack: item.ratePerPack,
       discountPct: item.discountPct, gstPct: item.gstPct,
+      reorderLevel: item.reorderLevel || 10,
     })));
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -75,7 +91,7 @@ export default function PurchaseBills() {
 
     const items: PurchaseBillItem[] = valid.map(r => {
       const c = calcLandingCost({ qtyPacksPaid: r.qtyPacksPaid, qtyPacksFree: r.qtyPacksFree, ratePerPack: r.ratePerPack, discountPct: r.discountPct, gstPct: r.gstPct, mrpPerPack: r.mrpPerPack, packSize: r.packSize || 1 });
-      return { medicineName: r.medicineName.trim(), batchNo: r.batchNo.trim(), expiryDate: r.expiryDate.trim(), discontinued: false, ...c };
+      return { medicineName: r.medicineName.trim(), batchNo: r.batchNo.trim(), expiryDate: r.expiryDate.trim(), discontinued: false, reorderLevel: r.reorderLevel || 10, ...c };
     });
 
     const total = items.reduce((s, i) => s + i.totalPaid, 0);
@@ -161,7 +177,7 @@ export default function PurchaseBills() {
               <table className="w-full text-xs">
                 <thead className="bg-slate-700 text-white">
                   <tr>
-                    {["#","Medicine Name","Batch","Expiry","Pack","MRP/Pack","Qty Paid","Free","Rate/Pack","Disc%","GST%","Land/Tab ₹","Total ₹",""].map(h => (
+                    {["#","Medicine Name","Batch","Expiry","Pack","MRP/Pack","Qty Paid","Free","Rate/Pack","Disc%","GST%","Reorder","Land/Tab ₹","Total ₹",""].map(h => (
                       <th key={h} className="px-2 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -172,7 +188,13 @@ export default function PurchaseBills() {
                     return (
                       <tr key={i} className={`border-b border-slate-100 ${i%2===0?"bg-white":"bg-slate-50/30"}`}>
                         <td className="px-2 py-1 text-slate-400 text-xs">{i+1}</td>
-                        <td className="px-2 py-1 min-w-[160px]"><input value={r.medicineName} onChange={e => setRows(p=>p.map((x,idx)=>idx===i?{...x,medicineName:e.target.value}:x))} placeholder="Medicine name" className={inputCls} autoComplete="off" /></td>
+                        <td className="px-2 py-1 min-w-[160px]"><input value={r.medicineName} 
+  onChange={e => setRows(p=>p.map((x,idx)=>idx===i?{...x,medicineName:e.target.value}:x))}
+  onBlur={e => {
+    const saved = getSavedReorderLevel(e.target.value);
+    setRows(p=>p.map((x,idx)=>idx===i?{...x,reorderLevel:saved}:x));
+  }}
+  placeholder="Medicine name" className={inputCls} autoComplete="off" /></td>
                         <td className="px-2 py-1 w-20"><input value={r.batchNo} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,batchNo:e.target.value}:x))} placeholder="Batch" className={inputCls}/></td>
                         <td className="px-2 py-1 w-20"><input value={r.expiryDate} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,expiryDate:e.target.value}:x))} placeholder="MM/YY" className={inputCls}/></td>
                         <td className="px-2 py-1 w-14"><input type="number" value={r.packSize} min={1} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,packSize:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
@@ -182,6 +204,9 @@ export default function PurchaseBills() {
                         <td className="px-2 py-1 w-20"><input type="number" value={r.ratePerPack||""} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,ratePerPack:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
                         <td className="px-2 py-1 w-14"><input type="number" value={r.discountPct} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,discountPct:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
                         <td className="px-2 py-1 w-14"><input type="number" value={r.gstPct} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,gstPct:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
+                        <td className="px-2 py-1 w-16"><input type="number" value={r.reorderLevel} min={0} title="Alert when stock drops below this"
+                          onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,reorderLevel:Number(e.target.value)}:x))}
+                          className={inputCls+" text-right bg-yellow-50"} placeholder="10"/></td>
                         <td className="px-2 py-1 text-right">
                           {c ? <div><span className="font-bold text-blue-600">₹{c.landingCostPerTablet.toFixed(4)}</span><div className="text-slate-400">MRP/tab: ₹{c.mrpPerTablet.toFixed(2)}</div></div> : <span className="text-slate-300">—</span>}
                         </td>
