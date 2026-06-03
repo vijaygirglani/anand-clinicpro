@@ -418,6 +418,20 @@ export function discontinueBatch(billId: string, batchNo: string, medicineName: 
   localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
+// Re-activate a discontinued batch
+export function reactivateBatch(billId: string, batchNo: string, medicineName: string): void {
+  const bills = getPurchaseBills();
+  const bill = bills.find(b => b.id === billId);
+  if (!bill) return;
+  const item = bill.items.find(i => i.batchNo === batchNo &&
+    i.medicineName.toLowerCase() === medicineName.toLowerCase());
+  if (item) {
+    item.discontinued = false;
+    item.alertDismissed = false;
+  }
+  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+}
+
 // Stock valuation
 export function getStockValuation(): { atCost: number; atMrp: number; profit: number } {
   const batches = getAllBatchStocks().filter(b => !b.discontinued);

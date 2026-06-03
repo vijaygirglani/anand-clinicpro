@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
-import { getAllBatchStocks, discontinueBatch, getStockValuation, setBatchReorderLevel, dismissStockAlert } from "@/lib/inventory";
+import { getAllBatchStocks, discontinueBatch, reactivateBatch, getStockValuation, setBatchReorderLevel, dismissStockAlert } from "@/lib/inventory";
 import { getSettings, getActiveDoctor } from "@/lib/settings";
 import { Package, AlertTriangle, XCircle, Clock, Ban, BellOff, Edit2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -136,32 +136,44 @@ export default function StockStatus() {
                     {isAdmin && (
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-1 flex-wrap">
-                          {!b.discontinued && b.stockStatus === "low" && (
-                            <button onClick={() => { dismissStockAlert(b.billId, b.batchNo, b.medicineName); forceUpdate(n=>n+1); toast({title:"Alert dismissed"}); }}
-                              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors" title="Dismiss alert">
-                              <BellOff className="w-3 h-3"/>
+                          {b.discontinued ? (
+                            /* Re-activate button for discontinued batches */
+                            <button onClick={() => { reactivateBatch(b.billId, b.batchNo, b.medicineName); forceUpdate(n=>n+1); toast({title:"Batch re-activated"}); }}
+                              className="flex items-center gap-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors border border-green-300 font-medium">
+                              ↺ Re-activate
                             </button>
-                          )}
-                          {!b.discontinued && editingReorder === `${b.billId}-${b.batchNo}` ? (
-                            <div className="flex items-center gap-1">
-                              <input type="number" value={reorderValue} min={0}
-                                onChange={e => setReorderValue(Number(e.target.value))}
-                                className="w-14 border border-slate-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none" />
-                              <button onClick={() => { setBatchReorderLevel(b.billId, b.batchNo, b.medicineName, reorderValue); setEditingReorder(null); forceUpdate(n=>n+1); toast({title:`Reorder level set to ${reorderValue}`}); }}
-                                className="text-xs text-green-600 font-bold px-1.5 py-0.5 bg-green-50 rounded">✓</button>
-                              <button onClick={() => setEditingReorder(null)} className="text-xs text-slate-400 px-1">✕</button>
-                            </div>
                           ) : (
-                            <button onClick={() => { setEditingReorder(`${b.billId}-${b.batchNo}`); setReorderValue(b.reorderLevel); }}
-                              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors" title={`Reorder at ${b.reorderLevel} tabs`}>
-                              <Edit2 className="w-3 h-3"/>{b.reorderLevel}
-                            </button>
-                          )}
-                          {!b.discontinued && (
-                            <button onClick={() => handleDiscontinue(b.billId, b.batchNo, b.medicineName)}
-                              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
-                              <Ban className="w-3 h-3"/>
-                            </button>
+                            <>
+                              {/* Dismiss alert - only when LOW STOCK */}
+                              {b.stockStatus === "low" && (
+                                <button onClick={() => { dismissStockAlert(b.billId, b.batchNo, b.medicineName); forceUpdate(n=>n+1); toast({title:"Alert dismissed"}); }}
+                                  className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 px-2 py-1 rounded-lg transition-colors" title="Dismiss low stock alert">
+                                  <BellOff className="w-3 h-3"/>
+                                </button>
+                              )}
+                              {/* Edit reorder level */}
+                              {editingReorder === `${b.billId}-${b.batchNo}` ? (
+                                <div className="flex items-center gap-1">
+                                  <input type="number" value={reorderValue} min={0}
+                                    onChange={e => setReorderValue(Number(e.target.value))}
+                                    className="w-14 border border-slate-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none" />
+                                  <button onClick={() => { setBatchReorderLevel(b.billId, b.batchNo, b.medicineName, reorderValue); setEditingReorder(null); forceUpdate(n=>n+1); toast({title:`Reorder: ${reorderValue} tabs`}); }}
+                                    className="text-xs text-green-600 font-bold px-1.5 py-0.5 bg-green-50 rounded border border-green-300">✓</button>
+                                  <button onClick={() => setEditingReorder(null)} className="text-xs text-slate-400 px-1">✕</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => { setEditingReorder(`${b.billId}-${b.batchNo}`); setReorderValue(b.reorderLevel); }}
+                                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors border border-slate-200" title="Set reorder level">
+                                  <Edit2 className="w-3 h-3"/>
+                                  <span>{b.reorderLevel}</span>
+                                </button>
+                              )}
+                              {/* Discontinue */}
+                              <button onClick={() => handleDiscontinue(b.billId, b.batchNo, b.medicineName)}
+                                className="flex items-center gap-1 text-xs text-red-400 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors" title="Discontinue batch">
+                                <Ban className="w-3 h-3"/>
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
