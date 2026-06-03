@@ -300,12 +300,32 @@ export default function Home() {
 
   const getMedSuggestions = (query: string) => {
     if (!query || query.length < 1) return [];
-    return searchMedicineNames(query).map(r => ({
-      name: r.name,
-      mrpPerTablet: r.bestBatch?.mrpPerTablet || 0,
-      currentStock: r.batches.reduce((s, b) => s + b.tabletsAvailable, 0),
-      bestBatch: r.bestBatch,
-    }));
+    const results = searchMedicineNames(query);
+    const suggestions: {name: string; mrpPerTablet: number; currentStock: number; bestBatch: any; batchLabel: string}[] = [];
+    for (const r of results) {
+      if (r.batches.length === 1) {
+        // Single batch - show one line
+        suggestions.push({
+          name: r.name,
+          mrpPerTablet: r.bestBatch?.mrpPerTablet || 0,
+          currentStock: r.batches.reduce((s, b) => s + b.tabletsAvailable, 0),
+          bestBatch: r.bestBatch,
+          batchLabel: "",
+        });
+      } else {
+        // Multiple batches - show each batch separately so doctor can pick
+        for (const batch of r.batches) {
+          suggestions.push({
+            name: r.name,
+            mrpPerTablet: batch.mrpPerTablet,
+            currentStock: batch.tabletsAvailable,
+            bestBatch: batch,
+            batchLabel: `Batch ${batch.batchNo} · exp:${batch.expiryDate}`,
+          });
+        }
+      }
+    }
+    return suggestions.slice(0, 10);
   };
   const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
     setMedRowsSync(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
