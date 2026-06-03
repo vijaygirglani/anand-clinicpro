@@ -1140,6 +1140,7 @@ export default function Home() {
                         <tr className="bg-slate-700 text-white">
                           <th className="px-3 py-2 text-left font-semibold text-xs w-8">No</th>
                           <th className="px-2 py-2 text-left font-semibold text-xs">Item Name</th>
+                          <th className="px-2 py-2 text-left font-semibold text-xs w-24">Batch</th>
                           <th className="px-2 py-2 text-right font-semibold text-xs w-16">Qty</th>
                           <th className="px-2 py-2 text-right font-semibold text-xs w-24">MRP/Tab</th>
                           <th className="px-2 py-2 text-right font-semibold text-xs w-24">Amount</th>
@@ -1231,6 +1232,25 @@ export default function Home() {
                                     </div>
                                   )}
                                 </div>
+                              </td>
+                              <td className="px-2 py-1 min-w-[90px]">
+                                {r.medicineName ? (
+                                  <select value={r.batchNo}
+                                    onChange={e => {
+                                      const sel = getAvailableBatchesForMedicine(r.medicineName).find(b => b.batchNo === e.target.value);
+                                      if (sel) {
+                                        const updated = { batchNo: sel.batchNo, billId: sel.billId, mrp: sel.mrpPerTablet, landingCostPerTablet: sel.landingCostPerTablet };
+                                        setMedRowsSync(p => p.map((x, idx) => idx === i ? { ...x, ...updated } : x));
+                                        medRowsRef.current = medRowsRef.current.map((x, idx) => idx === i ? { ...x, ...updated } : x);
+                                      }
+                                    }}
+                                    className="w-full border border-slate-300 rounded px-1 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50">
+                                    {getAvailableBatchesForMedicine(r.medicineName).map(b => (
+                                      <option key={b.batchNo} value={b.batchNo}>{b.batchNo} ({b.tabletsAvailable})</option>
+                                    ))}
+                                    {!getAvailableBatchesForMedicine(r.medicineName).length && r.batchNo && <option value={r.batchNo}>{r.batchNo}</option>}
+                                  </select>
+                                ) : <span className="text-slate-300 text-xs">—</span>}
                               </td>
                               <td className="px-2 py-1">
                                 <input type="number" value={r.qty} min={1}
