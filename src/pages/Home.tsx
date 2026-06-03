@@ -266,6 +266,9 @@ export default function Home() {
   const [showNameDropdown, setShowNameDropdown] = useState(false);
   const [pendingFees, setPendingFees] = useState<PendingEntry[]>(() => getPendingFees());
   const [feesMarkedPending, setFeesMarkedPending] = useState(false);
+  const [pendingAmount, setPendingAmount] = useState<string>("");
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingAlert, setPendingAlert] = useState<PendingEntry | null>(null);
 
   // ── Medicine Table state ──
   interface MedRow {
@@ -693,9 +696,13 @@ export default function Home() {
     }
 
     if (feesMarkedPending && saved.fees > 0) {
-      addPendingFee({ patientId: saved.id, name: saved.name, mobile: saved.mobile, fees: saved.fees, date: visitDate, markedAt: new Date().toISOString() });
+      const pendingVal = pendingAmount.trim() !== "" ? Number(pendingAmount) : saved.fees;
+      const finalPending = (!isNaN(pendingVal) && pendingVal > 0 && pendingVal <= saved.fees) ? pendingVal : saved.fees;
+      addPendingFee({ patientId: saved.id, name: saved.name, mobile: saved.mobile, fees: finalPending, date: visitDate, markedAt: new Date().toISOString() });
       refreshPending();
     }
+    setFeesMarkedPending(false);
+    setPendingAmount("");
     setLastSaved(saved);
     setFeesMarkedPending(false);
     toast({
