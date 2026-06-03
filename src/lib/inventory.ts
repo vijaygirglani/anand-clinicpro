@@ -182,8 +182,37 @@ export function calcLandingCost(params: {
 // ═══════════════════════════════════════════════════════════════
 
 export function getPurchaseBills(): PurchaseBill[] {
-  try { return JSON.parse(localStorage.getItem(PURCHASE_BILLS_KEY) || "[]"); }
-  catch { return []; }
+  try {
+    const raw = JSON.parse(localStorage.getItem(PURCHASE_BILLS_KEY) || "[]");
+    // Normalize each bill - handle both old and new format
+    return raw.map((bill: any) => ({
+      ...bill,
+      id: String(bill.id), // ensure string id
+      paymentStatus: bill.paymentStatus || "unpaid",
+      amountPaid: bill.amountPaid || 0,
+      amountPending: bill.amountPending ?? bill.grandTotal ?? 0,
+      items: (bill.items || []).map((item: any) => {
+        // Normalize item fields from old format
+        const packSize = item.packSize || 1;
+        const mrpPerPack = item.mrpPerPack || item.mrp || 0;
+        const mrpPerTablet = item.mrpPerTablet || mrpPerPack / packSize;
+        const totalPacksReceived = item.totalPacksReceived || item.totalQtyReceived || 0;
+        const totalTabletsReceived = item.totalTabletsReceived || totalPacksReceived * packSize;
+        const landingCostPerPack = item.landingCostPerPack || item.landingCostPerUnit || 0;
+        const landingCostPerTablet = item.landingCostPerTablet || landingCostPerPack / packSize;
+        return {
+          ...item,
+          packSize, mrpPerPack, mrpPerTablet,
+          totalPacksReceived, totalTabletsReceived,
+          landingCostPerPack, landingCostPerTablet,
+          qtyPacksPaid: item.qtyPacksPaid || item.qtyPaid || 0,
+          qtyPacksFree: item.qtyPacksFree || item.qtyFree || 0,
+          ratePerPack: item.ratePerPack || item.ratePerUnit || 0,
+          discontinued: item.discontinued || false,
+        };
+      }),
+    }));
+  } catch { return []; }
 }
 
 export function savePurchaseBill(bill: PurchaseBill): void {
@@ -284,6 +313,21 @@ export function getAllBatchStocks(): BatchStock[] {
 
   for (const bill of bills) {
     for (const item of bill.items) {
+      // Skip old-format items that don't have new fields
+      if (!item.mrpPerPack && !item.mrpPerTablet) continue;
+      // Migrate old format on the fly
+      if (!item.mrpPerPack && (item as any).mrp) {
+        item.mrpPerPack = (item as any).mrp;
+        item.packSize = item.packSize || 1;
+        item.mrpPerTablet = item.mrpPerPack / item.packSize;
+        item.landingCostPerPack = (item as any).landingCostPerUnit || 0;
+        item.landingCostPerTablet = item.landingCostPerPack / item.packSize;
+        item.totalPacksReceived = item.totalPacksReceived || (item as any).totalQtyReceived || 0;
+        item.totalTabletsReceived = item.totalPacksReceived * item.packSize;
+        item.qtyPacksPaid = item.qtyPacksPaid || (item as any).qtyPaid || 0;
+        item.qtyPacksFree = item.qtyPacksFree || (item as any).qtyFree || 0;
+        item.ratePerPack = item.ratePerPack || (item as any).ratePerUnit || 0;
+      }
       const tabletsUsed = getTabletsUsedForBatch(bill.id, item.batchNo, item.medicineName);
       const tabletsAvailable = Math.max(0, item.totalTabletsReceived - tabletsUsed);
       const daysToExpiry = calcDaysToExpiry(item.expiryDate);
