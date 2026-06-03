@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
-import { getAllBatchStocks, discontinueBatch, getStockValuation } from "@/lib/inventory";
+import { getAllBatchStocks, discontinueBatch, getStockValuation, setBatchReorderLevel, dismissStockAlert } from "@/lib/inventory";
 import { getSettings, getActiveDoctor } from "@/lib/settings";
-import { Package, AlertTriangle, XCircle, CheckCircle2, Clock, Ban } from "lucide-react";
+import { Package, AlertTriangle, XCircle, Clock, Ban, BellOff, Edit2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function StockStatus() {
@@ -10,6 +10,8 @@ export default function StockStatus() {
   const [tab, setTab] = useState<"stock"|"expiry">("stock");
   const [showDiscontinued, setShowDiscontinued] = useState(false);
   const [, forceUpdate] = useState(0);
+  const [editingReorder, setEditingReorder] = useState<string | null>(null);
+  const [reorderValue, setReorderValue] = useState<number>(10);
   const settings = getSettings();
   const doctor = getActiveDoctor();
   const isAdmin = doctor?.id === 1;
@@ -112,7 +114,7 @@ export default function StockStatus() {
             <table className="w-full text-sm border-collapse">
               <thead className="bg-slate-700 text-white">
                 <tr>
-                  {["Medicine","Batch","Expiry","Pack","MRP/Tab","MRP/Pack","Land/Tab","Stock (Tabs)","Status", isAdmin?"Action":""].filter(Boolean).map(h=>(
+                  {["Medicine","Batch","Expiry","Pack","MRP/Tab","MRP/Pack","Land/Tab","Stock (Tabs)","Status", isAdmin?"Reorder · Alert · Stop":""].filter(Boolean).map(h=>(
                     <th key={h} className="px-4 py-3 text-left font-semibold text-xs">{h}</th>
                   ))}
                 </tr>
@@ -133,12 +135,35 @@ export default function StockStatus() {
                     <td className="px-4 py-2.5">{statusBadge(b.stockStatus)}</td>
                     {isAdmin && (
                       <td className="px-4 py-2.5">
-                        {!b.discontinued && (
-                          <button onClick={() => handleDiscontinue(b.billId, b.batchNo, b.medicineName)}
-                            className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
-                            <Ban className="w-3 h-3"/>Discontinue
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {!b.discontinued && b.stockStatus === "low" && (
+                            <button onClick={() => { dismissStockAlert(b.billId, b.batchNo, b.medicineName); forceUpdate(n=>n+1); toast({title:"Alert dismissed"}); }}
+                              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors" title="Dismiss alert">
+                              <BellOff className="w-3 h-3"/>
+                            </button>
+                          )}
+                          {!b.discontinued && editingReorder === `${b.billId}-${b.batchNo}` ? (
+                            <div className="flex items-center gap-1">
+                              <input type="number" value={reorderValue} min={0}
+                                onChange={e => setReorderValue(Number(e.target.value))}
+                                className="w-14 border border-slate-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none" />
+                              <button onClick={() => { setBatchReorderLevel(b.billId, b.batchNo, b.medicineName, reorderValue); setEditingReorder(null); forceUpdate(n=>n+1); toast({title:`Reorder level set to ${reorderValue}`}); }}
+                                className="text-xs text-green-600 font-bold px-1.5 py-0.5 bg-green-50 rounded">✓</button>
+                              <button onClick={() => setEditingReorder(null)} className="text-xs text-slate-400 px-1">✕</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setEditingReorder(`${b.billId}-${b.batchNo}`); setReorderValue(b.reorderLevel); }}
+                              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 px-2 py-1 rounded-lg transition-colors" title={`Reorder at ${b.reorderLevel} tabs`}>
+                              <Edit2 className="w-3 h-3"/>{b.reorderLevel}
+                            </button>
+                          )}
+                          {!b.discontinued && (
+                            <button onClick={() => handleDiscontinue(b.billId, b.batchNo, b.medicineName)}
+                              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
+                              <Ban className="w-3 h-3"/>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

@@ -27,6 +27,8 @@ export interface PurchaseBillItem {
   landingCostPerPack: number;  // totalPaid / totalPacksReceived
   landingCostPerTablet: number; // landingCostPerPack / packSize
   discontinued: boolean;    // admin can discontinue
+  reorderLevel?: number;    // alert when stock drops below this (default 10)
+  alertDismissed?: boolean; // admin dismissed low stock alert
 }
 
 export interface PurchaseBill {
@@ -349,8 +351,10 @@ export function getAllBatchStocks(): BatchStock[] {
         discontinued: item.discontinued || false,
         daysToExpiry,
         expiryStatus: getExpiryStatus(daysToExpiry),
-        stockStatus: tabletsAvailable <= 0 ? "out" : tabletsAvailable <= REORDER_LEVEL ? "low" : "ok",
-        reorderLevel: REORDER_LEVEL,
+        stockStatus: item.alertDismissed ? "ok" : 
+                     tabletsAvailable <= 0 ? "out" : 
+                     tabletsAvailable <= (item.reorderLevel ?? REORDER_LEVEL) ? "low" : "ok",
+        reorderLevel: item.reorderLevel ?? REORDER_LEVEL,
       });
     }
   }
@@ -652,4 +656,24 @@ export function importInventoryBackup(json: string): { success: boolean; message
     if (data.stockAdjustments) localStorage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(data.stockAdjustments));
     return { success: true, message: "Inventory data restored successfully" };
   } catch { return { success: false, message: "Failed to restore inventory data" }; }
+}
+
+// Set reorder level for a batch
+export function setBatchReorderLevel(billId: string, batchNo: string, medicineName: string, level: number): void {
+  const bills = getPurchaseBills();
+  const bill = bills.find(b => b.id === billId);
+  if (!bill) return;
+  const item = bill.items.find(i => i.batchNo === batchNo && i.medicineName.toLowerCase() === medicineName.toLowerCase());
+  if (item) item.reorderLevel = level;
+  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
+}
+
+// Dismiss low stock alert for a batch
+export function dismissStockAlert(billId: string, batchNo: string, medicineName: string): void {
+  const bills = getPurchaseBills();
+  const bill = bills.find(b => b.id === billId);
+  if (!bill) return;
+  const item = bill.items.find(i => i.batchNo === batchNo && i.medicineName.toLowerCase() === medicineName.toLowerCase());
+  if (item) item.alertDismissed = true;
+  localStorage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }

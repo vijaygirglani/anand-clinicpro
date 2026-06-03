@@ -1321,19 +1321,21 @@ export default function Home() {
                         </tbody>
                       </table>
                       {/* Summary row */}
-                      <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 text-xs">
-                          <span className="text-white/80">Gross: <strong className="text-white">₹{medGross.toFixed(2)}</strong></span>
-                          <span className="text-white/40">|</span>
-                          <label className="text-white/80 whitespace-nowrap">Other Charges:</label>
-                          <input type="number" value={otherCharges}
-                            onChange={e => setOtherCharges(Number(e.target.value))}
-                            className="w-24 border border-white/30 rounded px-2 py-1 text-xs text-right focus:outline-none bg-white/10 text-white placeholder-white/40"
-                            placeholder="-50 or +100" />
-                          <span className="text-xs text-white/50">(- disc, + extra)</span>
+                      <div className="bg-slate-700 border-t border-slate-600 px-4 py-2.5 flex items-center justify-between gap-4 rounded-b-xl flex-wrap">
+                        <div className="flex items-center gap-3 text-xs flex-wrap">
+                          <span className="text-white/70">Med Gross: <strong className="text-white">₹{medGross.toFixed(2)}</strong></span>
+                          <span className="text-white/30">|</span>
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-white/70 whitespace-nowrap">Procedure / Discount:</label>
+                            <input type="number" value={otherCharges || ""}
+                              onChange={e => setOtherCharges(Number(e.target.value))}
+                              className="w-24 border border-white/20 rounded px-2 py-1 text-xs text-right focus:outline-none bg-white/10 text-white placeholder-white/30"
+                              placeholder="0" />
+                            <span className="text-white/40 text-xs">(-=discount +procedure)</span>
+                          </div>
                         </div>
                         <div className="text-base font-bold text-white whitespace-nowrap">
-                          Bill: ₹{billAmount.toFixed(2)}
+                          Bill Total: ₹{billAmount.toFixed(2)}
                         </div>
                       </div>
                   </div>
