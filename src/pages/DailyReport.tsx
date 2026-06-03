@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
+import { getDailyProfitReport as getInventoryReport, getPatientBillsByDate, getExpensesByDateRange } from "@/lib/inventory";
 import { getDailyProfitReport, generateWhatsAppReport, exportBackup } from "@/lib/store";
 import { getSettings } from "@/lib/settings";
 import { useToast } from "@/hooks/use-toast";
@@ -11,10 +12,41 @@ export default function DailyReport() {
   const settings = getSettings();
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  const report = getDailyProfitReport(date, {
+  // Get patients from store for consultation fees
+  const { getPatientsByDate } = require("@/lib/store");
+  
+  // Use inventory-based profit report (reads from cp_patient_bills)
+  const patientBills = getPatientBillsByDate(date);
+  
+  // Fall back to store report for consultation data, but add med profit from inventory
+  const storeReport = getDailyProfitReport(date, {
     doctor1Name: settings.doctor1Name,
     doctor2Name: settings.doctor2Name,
   });
+
+  // Override med stats with inventory data
+  const d1Bills = patientBills.filter(b => b.doctorId === 1);
+  const d2Bills = patientBills.filter(b => b.doctorId === 2);
+  
+  const report = {
+    ...storeReport,
+    doctor1: {
+      ...storeReport.doctor1,
+      medicineSales: d1Bills.reduce((s, b) => s + b.totalSale, 0),
+      medicineCost: d1Bills.reduce((s, b) => s + b.totalCost, 0),
+      medicineProfit: d1Bills.reduce((s, b) => s + b.totalProfit, 0),
+      total: storeReport.doctor1.consultationFees + d1Bills.reduce((s, b) => s + b.totalProfit, 0),
+    },
+    doctor2: {
+      ...storeReport.doctor2,
+      medicineSales: d2Bills.reduce((s, b) => s + b.totalSale, 0),
+      medicineCost: d2Bills.reduce((s, b) => s + b.totalCost, 0),
+      medicineProfit: d2Bills.reduce((s, b) => s + b.totalProfit, 0),
+      total: storeReport.doctor2.consultationFees + d2Bills.reduce((s, b) => s + b.totalProfit, 0),
+    },
+    totalMedicineSales: patientBills.reduce((s, b) => s + b.totalSale, 0),
+    totalMedicineProfit: patientBills.reduce((s, b) => s + b.totalProfit, 0),
+  };
 
   const whatsAppText = generateWhatsAppReport(date, settings.clinicName, {
     doctor1Name: settings.doctor1Name,

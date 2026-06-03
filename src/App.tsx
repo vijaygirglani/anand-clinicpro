@@ -32,6 +32,8 @@ function getInitialState(): AppState {
 }
 
 function AppRoutes({ onSwitch }: { onSwitch: () => void }) {
+  // Expose switch function to Layout (called from navbar doctor badge)
+  (window as any).__clinicproSwitch = onSwitch;
   return (
     <ThemeProvider>
       <Switch>
