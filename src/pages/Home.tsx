@@ -1304,13 +1304,10 @@ export default function Home() {
                     <Printer className="w-5 h-5" /> Print Last
                   </button>
                 )}
-                <button type="button" onClick={onSaveAyurvedic}
-                  className="px-5 py-3 rounded-xl font-semibold bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2">
-                  <Leaf className="w-5 h-5" /> Save Ayurvedic
-                </button>
                 <button type="submit"
-                  className="px-7 py-3 rounded-xl font-semibold bg-gradient-to-r from-primary to-primary/90 text-white shadow-lg shadow-primary/30 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2">
-                  <Save className="w-5 h-5" /> Save General
+                  className="px-7 py-3 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2"
+                  style={{background: `rgb(var(--primary))`}}>
+                  <Save className="w-5 h-5" /> Save Patient
                 </button>
               </div>
             </form>

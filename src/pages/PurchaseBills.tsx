@@ -125,7 +125,7 @@ export default function PurchaseBills() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900">Purchase Bills</h1>
-              <p className="text-sm text-slate-500">{bills.length} bills · ₹{bills.reduce((s,b)=>s+b.amountPending,0).toLocaleString("en-IN")} pending</p>
+              <p className="text-sm text-slate-500">{bills.length} bills · ₹{bills.reduce((s,b)=>s+(b.amountPending||0),0).toLocaleString("en-IN")} pending</p>
             </div>
           </div>
           <button onClick={() => { setShowForm(s => !s); if (showForm) { setEditId(null); setRows([emptyRow()]); } }}
@@ -237,7 +237,7 @@ export default function PurchaseBills() {
                       <p className="font-semibold text-slate-900">{bill.supplierName} <span className="text-slate-400 font-normal text-sm">#{bill.billNo}</span></p>
                       {statusBadge(bill)}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">{format(new Date(bill.billDate),"dd MMM yyyy")} · {bill.items.length} items · Pending: <span className="font-semibold text-red-600">₹{bill.amountPending.toFixed(0)}</span></p>
+                    <p className="text-xs text-slate-500 mt-0.5">{bill.billDate ? format(new Date(bill.billDate),"dd MMM yyyy") : "—"} · {bill.items.length} items · Pending: <span className="font-semibold text-red-600">₹{(bill.amountPending||0).toFixed(0)}</span></p>
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="font-bold text-slate-900">₹{bill.grandTotal.toFixed(2)}</p>
@@ -313,7 +313,7 @@ export default function PurchaseBills() {
                     <td className="px-4 py-3 font-semibold">₹{s.totalAmount.toLocaleString("en-IN")}</td>
                     <td className="px-4 py-3 text-green-600 font-semibold">₹{s.amountPaid.toLocaleString("en-IN")}</td>
                     <td className="px-4 py-3 font-semibold text-red-600">₹{s.amountPending.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-3 text-slate-500">{s.lastBillDate ? format(new Date(s.lastBillDate),"dd MMM yyyy") : "—"}</td>
+                    <td className="px-4 py-3 text-slate-500">{s.lastBillDate ? s.lastBillDate ? format(new Date(s.lastBillDate),"dd MMM yyyy") : "—" : "—"}</td>
                     <td className="px-4 py-3">
                       {s.amountPending === 0
                         ? <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">All Paid</span>
