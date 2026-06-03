@@ -69,7 +69,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   // Live stock alerts
   const batches = getAllBatchStocks();
-  const alerts = batches.filter(b => !b.discontinued && (b.stockStatus === "out" || b.stockStatus === "low")).length;
+  const alerts = batches.filter(b => !b.discontinued && !b.alertDismissed && (b.stockStatus === "out" || b.stockStatus === "low")).length;
 
   const doctorBg = doctor?.id === 1
     ? "bg-blue-500 hover:bg-blue-600"

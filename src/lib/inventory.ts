@@ -63,6 +63,7 @@ export interface BatchStock {
   expiryStatus: "expired" | "critical" | "soon" | "watch" | "good";
   stockStatus: "out" | "low" | "ok";
   reorderLevel: number;
+  alertDismissed: boolean;
 }
 
 export interface PatientMedicineItem {
@@ -355,6 +356,7 @@ export function getAllBatchStocks(): BatchStock[] {
                      tabletsAvailable <= 0 ? "out" : 
                      tabletsAvailable <= (item.reorderLevel ?? REORDER_LEVEL) ? "low" : "ok",
         reorderLevel: item.reorderLevel ?? REORDER_LEVEL,
+        alertDismissed: item.alertDismissed || false,
       });
     }
   }
