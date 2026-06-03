@@ -22,6 +22,7 @@ function getLooseSalesForDate(date: string): LooseSaleEntry[] {
 import { exportToExcel, parseExcelFile } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { WhatsAppModal } from "@/components/WhatsAppModal";
 import { deletePatientBill } from "@/lib/inventory";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
@@ -52,6 +53,7 @@ export default function DailyRegister() {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [stats, setStats] = useState<DailyStats | null>(null);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+  const [waPatient, setWaPatient] = useState<{name: string; mobile: string} | null>(null);
   const [showSummary, setShowSummary] = useState(false);
   const [showMonthly, setShowMonthly] = useState(false);
   const [allDates, setAllDates] = useState<{ date: string; count: number; totalFees: number }[]>([]);
@@ -221,6 +223,7 @@ Thank you everyone for your trust 🙏
   };
 
   return (
+    <>
     <Layout>
       {printPatient && <PrintPrescription patient={printPatient} />}
       <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleRestoreFile} />
@@ -345,6 +348,10 @@ Thank you everyone for your trust 🙏
                           <button onClick={() => setEditingPatient(p)}
                             className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
                             <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => setWaPatient({name: p.name, mobile: p.mobile})}
+                            className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Send WhatsApp">
+                            <MessageCircle className="w-4 h-4" />
                           </button>
                           <button onClick={() => handleDelete(p.id)}
                             className="p-2 text-slate-400 hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
@@ -651,5 +658,13 @@ Thank you everyone for your trust 🙏
         </DialogContent>
       </Dialog>
     </Layout>
+    {waPatient && (
+      <WhatsAppModal
+        patientName={waPatient.name}
+        mobile={waPatient.mobile}
+        onClose={() => setWaPatient(null)}
+      />
+    )}
+  </>
   );
 }

@@ -15,8 +15,7 @@ import {
   FileText, Printer, Paperclip, X, Leaf, Weight, Calendar,
   Zap, Search, SlidersHorizontal, Sheet, Link, ClipboardPaste,
   Hourglass, CheckCircle2, WalletCards, MessageSquare, ChevronDown, Stethoscope,
-  ShoppingBag, PackagePlus, Trash2, IndianRupee,
-} from "lucide-react";
+  ShoppingBag, PackagePlus, Trash2, IndianRupee, MessageCircle} from "lucide-react";
 
 // ── Pending Fees helpers ──────────────────────────────────────────────
 const PENDING_KEY = "manglam_pending_fees";
@@ -44,6 +43,7 @@ function removeLooseSale(id: string) {
 function genSaleId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 import { useToast } from "@/hooks/use-toast";
 import { getActiveDoctor } from "@/lib/settings";
+import { WhatsAppModal } from "@/components/WhatsAppModal";
 import {
   searchMedicineNames, getAvailableBatchesForMedicine,
   savePatientBill, deletePatientBill, newId,
@@ -290,6 +290,7 @@ export default function Home() {
   const billAmount = medGross + otherCharges;
   // medNames no longer needed - using searchMedicineNames from inventory
   const activeDoctor = getActiveDoctor();
+  const [waPatient, setWaPatient] = useState<{name: string; mobile: string} | null>(null);
 
   const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number; bestBatch: any}[]>([]);
   const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
@@ -1396,6 +1397,13 @@ export default function Home() {
                   style={{background: `rgb(var(--primary))`}}>
                   <Save className="w-5 h-5" /> Save Patient
                 </button>
+                {lastSaved && (
+                  <button type="button"
+                    onClick={() => setWaPatient({name: lastSaved.name, mobile: lastSaved.mobile})}
+                    className="px-5 py-3 rounded-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg transition-all flex items-center gap-2">
+                    <MessageCircle className="w-5 h-5" /> WhatsApp
+                  </button>
+                )}
               </div>
             </form>
           </div>
