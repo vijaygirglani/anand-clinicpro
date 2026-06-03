@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
-import { getMedicines, getExpiryList, getStockValuation, getStockStatus, type MedicineItem } from "@/lib/store";
+import { getMedicines, getExpiryList, getStockValuation, getStockStatus, getMrpPerTablet, getLandingCostPerTablet, type MedicineItem } from "@/lib/store";
 import { Package, AlertTriangle, XCircle, CheckCircle2, Clock } from "lucide-react";
 
 export default function StockStatus() {
@@ -116,7 +116,7 @@ export default function StockStatus() {
                 {[...out, ...low, ...ok].map((m, idx) => {
                   const st = statusStyle(m);
                   const exp = getNearestExpiry(m.name);
-                  const mrpPerTab = m.mrpPerTablet || m.mrp;
+                  const mrpPerTab = getMrpPerTablet(m);
                   return (
                     <tr key={m.id} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${st.row} ${idx % 2 === 0 && !st.row ? "bg-white" : !st.row ? "bg-slate-50/40" : ""}`}>
                       <td className="px-4 py-2.5 font-semibold text-slate-900">{m.name}</td>

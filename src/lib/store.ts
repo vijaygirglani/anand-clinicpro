@@ -557,6 +557,17 @@ export function calcLandingCost(params: {
 // MEDICINES (Item Master)
 // ═══════════════════════════════════════════════════════════════
 
+// ALWAYS calculate per-tablet MRP from mrp/packSize - never trust stored value
+export function getMrpPerTablet(med: MedicineItem): number {
+  const ps = med.packSize || 1;
+  return ps > 1 ? med.mrp / ps : med.mrp;
+}
+
+export function getLandingCostPerTablet(med: MedicineItem): number {
+  const ps = med.packSize || 1;
+  return ps > 1 ? med.landingCost / ps : med.landingCost;
+}
+
 export function getMedicines(): MedicineItem[] {
   try { return JSON.parse(localStorage.getItem(MEDICINES_KEY) || "[]"); }
   catch { return []; }

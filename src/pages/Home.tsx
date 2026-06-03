@@ -8,6 +8,7 @@ import {
   getNextPatientNo, getNextCaseNo, lookupByComplaint, lookupByAddress,
   searchPatientSuggestions, checkMedicineStock, deductMedicineStock,
   getMedicineNamesFromPurchases, getMedicines, addMedicineBill,
+  getMrpPerTablet, getLandingCostPerTablet,
   type Patient, type PatientSuggestion,
 } from "@/lib/store";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
@@ -292,7 +293,7 @@ export default function Home() {
     const q = query.toLowerCase();
     return getMedicines()
       .filter(m => m.name.toLowerCase().includes(q))
-      .map(m => ({ name: m.name, mrpPerTablet: m.mrpPerTablet || m.mrp, currentStock: m.currentStock }))
+      .map(m => ({ name: m.name, mrpPerTablet: getMrpPerTablet(m), currentStock: m.currentStock }))
       .slice(0, 8);
   };
   const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
@@ -618,8 +619,8 @@ export default function Home() {
       const saleItems = validMedRows.map(r => {
         const med = medicines.find(m => m.name.toLowerCase() === r.medicineName.toLowerCase());
         // landingCost per tablet = landingCost / packSize
-        const packSize = med?.packSize || 1;
-        const landingCostPerTab = med ? (med.landingCost / packSize) : 0;
+        // Always calculate per-tablet costs using pure functions
+        const landingCostPerTab = med ? getLandingCostPerTablet(med) : 0;
         const salePrice = r.mrp * r.qty;
         const cost = landingCostPerTab * r.qty;
         return {
