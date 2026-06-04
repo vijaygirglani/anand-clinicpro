@@ -89,6 +89,7 @@ export interface PatientBill {
   totalSale: number;
   totalCost: number;
   totalProfit: number;
+  otherCharges?: number;   // positive = extra charge, negative = discount
   createdAt: string;
 }
 

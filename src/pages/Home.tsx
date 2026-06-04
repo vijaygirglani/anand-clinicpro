@@ -626,6 +626,9 @@ export default function Home() {
           profit: salePrice - cost,
         };
       });
+      const medSale   = items.reduce((s, i) => s + i.salePrice, 0);
+      const medCost   = items.reduce((s, i) => s + i.cost, 0);
+      const medProfit = items.reduce((s, i) => s + i.profit, 0);
       const patientBill: PatientBill = {
         id: newId(),
         patientId: saved.id,
@@ -633,9 +636,10 @@ export default function Home() {
         doctorId: activeDoctor?.id || 1,
         billDate: visitDate,
         items,
-        totalSale: items.reduce((s, i) => s + i.salePrice, 0),
-        totalCost: items.reduce((s, i) => s + i.cost, 0),
-        totalProfit: items.reduce((s, i) => s + i.profit, 0),
+        otherCharges: otherCharges ?? 0,
+        totalSale:   medSale   + (otherCharges ?? 0),
+        totalCost:   medCost,
+        totalProfit: medProfit + (otherCharges ?? 0),
         createdAt: new Date().toISOString(),
       };
       savePatientBill(patientBill);
