@@ -7,7 +7,6 @@ export function LicenseGate({ children }: { children: React.ReactNode }) {
   const [key, setKey]         = useState("");
   const [error, setError]     = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [, forceUpdate]       = useState(0);
 
   const info = getLicenseInfo();
 
@@ -26,7 +25,7 @@ export function LicenseGate({ children }: { children: React.ReactNode }) {
     const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
     if (daysLeft < -7) { setError("This key has already expired. Please contact Manglam ClinicPro for a new key."); return; }
     saveLicenseKey(trimmed);
-    forceUpdate(n => n + 1);
+    window.location.reload();
   };
 
   return (
