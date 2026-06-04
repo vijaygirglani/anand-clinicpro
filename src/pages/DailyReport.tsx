@@ -15,6 +15,15 @@ export default function DailyReport() {
 
   // Use inventory-based profit report (reads from cp_patient_bills)
   const patientBills = getPatientBillsByDate(date);
+  console.log("PATIENT BILLS:", JSON.stringify(
+    patientBills.map(b => ({
+      id: b.id,
+      doctorId: b.doctorId,
+      items: b.items?.length,
+      totalProfit: b.totalProfit,
+      otherCharges: b.otherCharges
+    }))
+  ));
   
   // Fall back to store report for consultation data, but add med profit from inventory
   const storeReport = getDailyProfitReport(date, {
