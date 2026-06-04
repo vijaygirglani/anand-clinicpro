@@ -1,65 +1,59 @@
-const { app, BrowserWindow, shell, ipcMain, session } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 let mainWindow;
+let isQuitting = false;
 
-// ── Data file path — stored in user's AppData permanently ──
+// ── Data file ────────────────────────────────────────────────────────────────
 const DATA_FILE = path.join(app.getPath('userData'), 'clinicpro-data.json');
 
-// Load all data from disk
 function loadData() {
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    }
+    if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   } catch (e) { console.error('Load error:', e); }
   return {};
 }
 
-// Save all data to disk
 function saveData(data) {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data), 'utf8');
-  } catch (e) { console.error('Save error:', e); }
+  try { fs.writeFileSync(DATA_FILE, JSON.stringify(data), 'utf8'); } catch (e) { console.error('Save error:', e); }
 }
 
-// IPC handlers for renderer to read/write data
-ipcMain.handle('storage-get', (event, key) => {
-  const data = loadData();
-  return data[key] || null;
+// ── IPC: Storage ─────────────────────────────────────────────────────────────
+ipcMain.handle('storage-get',    (_, key)        => { return loadData()[key] || null; });
+ipcMain.handle('storage-set',    (_, key, value) => { const d = loadData(); d[key] = value; saveData(d); return true; });
+ipcMain.handle('storage-remove', (_, key)        => { const d = loadData(); delete d[key]; saveData(d); return true; });
+ipcMain.handle('storage-clear',  ()              => { saveData({}); return true; });
+ipcMain.handle('storage-keys',   ()              => { return Object.keys(loadData()); });
+
+// ── IPC: Backup ──────────────────────────────────────────────────────────────
+ipcMain.handle('backup-data', async (_, jsonString) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultName = `ClinicPro-Backup-${today}.json`;
+
+  // Let user pick where to save
+  const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save ClinicPro Backup',
+    defaultPath: path.join(app.getPath('documents'), defaultName),
+    filters: [{ name: 'JSON Backup', extensions: ['json'] }],
+  });
+
+  if (canceled || !filePath) return { success: false, reason: 'canceled' };
+
+  try {
+    fs.writeFileSync(filePath, jsonString, 'utf8');
+    return { success: true, filePath };
+  } catch (e) {
+    return { success: false, reason: e.message };
+  }
 });
 
-ipcMain.handle('storage-set', (event, key, value) => {
-  const data = loadData();
-  data[key] = value;
-  saveData(data);
-  return true;
-});
-
-ipcMain.handle('storage-remove', (event, key) => {
-  const data = loadData();
-  delete data[key];
-  saveData(data);
-  return true;
-});
-
-ipcMain.handle('storage-clear', () => {
-  saveData({});
-  return true;
-});
-
-ipcMain.handle('storage-keys', () => {
-  return Object.keys(loadData());
-});
-
+// ── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    title: 'ClinicPro — Manglam Clinic',
+    width: 1280, height: 800,
+    minWidth: 900, minHeight: 600,
+    title: 'Manglam ClinicPro',
     icon: path.join(__dirname, '../public/icon-192.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -71,8 +65,7 @@ function createWindow() {
     backgroundColor: '#f8fafc',
   });
 
-  const indexPath = path.join(__dirname, '../dist/index.html');
-  mainWindow.loadFile(indexPath);
+  mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
@@ -82,6 +75,53 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // ── Backup popup on close ─────────────────────────────────────────────────
+  mainWindow.on('close', async (e) => {
+    if (isQuitting) return; // already confirmed, let it close
+    e.preventDefault(); // hold the close
+
+    // Ask renderer for all data to backup
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: 'Backup Before Exit',
+      message: 'Do you want to backup your data before closing?',
+      detail: 'Recommended: Take a backup every day to keep your data safe.',
+      buttons: ['Backup & Exit', 'Exit Without Backup', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      icon: path.join(__dirname, '../public/icon-192.png'),
+    });
+
+    if (result.response === 2) {
+      // Cancel — do nothing
+      return;
+    }
+
+    if (result.response === 0) {
+      // Backup — ask renderer to send data, then save
+      try {
+        const jsonString = await mainWindow.webContents.executeJavaScript(
+          `JSON.stringify(Object.fromEntries(Object.entries(localStorage)))`
+        );
+        const today = new Date().toISOString().slice(0, 10);
+        const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+          title: 'Save ClinicPro Backup',
+          defaultPath: path.join(app.getPath('documents'), `ClinicPro-Backup-${today}.json`),
+          filters: [{ name: 'JSON Backup', extensions: ['json'] }],
+        });
+        if (!canceled && filePath) {
+          fs.writeFileSync(filePath, jsonString, 'utf8');
+        }
+      } catch (err) {
+        console.error('Backup error:', err);
+      }
+    }
+
+    // Exit without backup OR after backup
+    isQuitting = true;
+    app.quit();
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });

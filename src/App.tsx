@@ -19,6 +19,8 @@ import NotFound from "@/pages/not-found";
 
 import { isSetupDone, getActiveSession, logout } from "@/lib/settings";
 import { initElectronStorage } from "@/lib/storage";
+import { LicenseGate } from "@/components/LicenseGate";
+import { LicenseBanner } from "@/components/LicenseBanner";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 5 * 60 * 1000, retry: 1 } },
@@ -33,10 +35,10 @@ function getInitialState(): AppState {
 }
 
 function AppRoutes({ onSwitch }: { onSwitch: () => void }) {
-  // Expose switch function to Layout (called from navbar doctor badge)
   (window as any).__clinicproSwitch = onSwitch;
   return (
     <ThemeProvider>
+      <LicenseBanner />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/daily-register" component={DailyRegister} />
@@ -56,7 +58,6 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<AppState>("login");
 
-  // Init storage first (critical for Electron)
   useState(() => {
     initElectronStorage().then(() => {
       setState(getInitialState());
@@ -78,14 +79,16 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        {state === "setup" && <Setup onDone={() => setState("login")} />}
-        {state === "login" && <Login onLogin={() => setState("app")} />}
-        {state === "app" && (
-          <WouterRouter base="">
-            <AppRoutes onSwitch={() => setState("login")} />
-          </WouterRouter>
-        )}
-        <Toaster />
+        <LicenseGate>
+          {state === "setup" && <Setup onDone={() => setState("login")} />}
+          {state === "login" && <Login onLogin={() => setState("app")} />}
+          {state === "app" && (
+            <WouterRouter base="">
+              <AppRoutes onSwitch={() => setState("login")} />
+            </WouterRouter>
+          )}
+          <Toaster />
+        </LicenseGate>
       </TooltipProvider>
     </QueryClientProvider>
   );
