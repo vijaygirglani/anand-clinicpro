@@ -9,6 +9,16 @@ import { useToast } from "@/hooks/use-toast";
 import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X, Pencil, IndianRupee, BarChart3, Building2, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 
+function formatExpiry(exp: string): string {
+  if (!exp) return "—";
+  const parts = exp.split("/");
+  if (parts.length !== 2) return exp;
+  const mm = parts[0].padStart(2, "0");
+  const yy = parts[1].trim();
+  const year = yy.length === 2 ? "20" + yy : yy;
+  return `${mm}/${year}`;
+}
+
 interface RowDraft {
   medicineName: string; batchNo: string; expiryDate: string;
   packSize: number; mrpPerPack: number;
@@ -311,7 +321,7 @@ export default function PurchaseBills() {
                             <td className="px-3 py-2 text-slate-400">{i+1}</td>
                             <td className="px-3 py-2 font-semibold text-slate-800">{item.medicineName}</td>
                             <td className="px-3 py-2 font-mono">{item.batchNo||"—"}</td>
-                            <td className="px-3 py-2">{item.expiryDate||"—"}</td>
+                            <td className="px-3 py-2">{formatExpiry(item.expiryDate)}</td>
                             <td className="px-3 py-2 text-right">{item.packSize}</td>
                             <td className="px-3 py-2 text-right">₹{item.mrpPerPack.toFixed(2)}</td>
                             <td className="px-3 py-2 text-right font-semibold">₹{item.mrpPerTablet.toFixed(2)}</td>
