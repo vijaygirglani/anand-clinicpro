@@ -55,7 +55,6 @@ function AppRoutes({ onSwitch }: { onSwitch: () => void }) {
   );
 }
 
-// ── Inline banner — reads AFTER storage is ready ──────────────────────────────
 function LicenseBanner() {
   const info = getLicenseInfo();
   if (info.status === "active" || info.status === "blocked") return null;
@@ -80,6 +79,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<AppState>("login");
 
+  // ── Wait for storage to load BEFORE rendering anything ──────────────────
   useState(() => {
     initElectronStorage().then(() => {
       setState(getInitialState());
@@ -87,6 +87,7 @@ export default function App() {
     });
   });
 
+  // Show loading until storage is fully ready
   if (!ready) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="text-center">
@@ -98,6 +99,7 @@ export default function App() {
     </div>
   );
 
+  // ── Storage is ready — NOW render LicenseGate and everything else ────────
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
