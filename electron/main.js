@@ -2,13 +2,11 @@ const { app, BrowserWindow, shell, ipcMain, dialog, Menu } = require('electron')
 const path = require('path');
 const fs = require('fs');
 
-// ── Remove default menu bar (File/Edit/View) ─────────────────────────────────
 Menu.setApplicationMenu(null);
 
 let mainWindow;
 let isQuitting = false;
 
-// ── Data file ────────────────────────────────────────────────────────────────
 const DATA_FILE = path.join(app.getPath('userData'), 'clinicpro-data.json');
 
 function loadData() {
@@ -22,32 +20,24 @@ function saveData(data) {
   try { fs.writeFileSync(DATA_FILE, JSON.stringify(data), 'utf8'); } catch (e) { console.error('Save error:', e); }
 }
 
-// ── IPC: Storage ─────────────────────────────────────────────────────────────
 ipcMain.handle('storage-get',    (_, key)        => { return loadData()[key] || null; });
 ipcMain.handle('storage-set',    (_, key, value) => { const d = loadData(); d[key] = value; saveData(d); return true; });
 ipcMain.handle('storage-remove', (_, key)        => { const d = loadData(); delete d[key]; saveData(d); return true; });
 ipcMain.handle('storage-clear',  ()              => { saveData({}); return true; });
 ipcMain.handle('storage-keys',   ()              => { return Object.keys(loadData()); });
 
-// ── IPC: Backup ──────────────────────────────────────────────────────────────
 ipcMain.handle('backup-data', async (_, jsonString) => {
   const today = new Date().toISOString().slice(0, 10);
-  const defaultName = `ClinicPro-Backup-${today}.json`;
   const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
     title: 'Save ClinicPro Backup',
-    defaultPath: path.join(app.getPath('documents'), defaultName),
+    defaultPath: path.join(app.getPath('documents'), `ClinicPro-Backup-${today}.json`),
     filters: [{ name: 'JSON Backup', extensions: ['json'] }],
   });
   if (canceled || !filePath) return { success: false, reason: 'canceled' };
-  try {
-    fs.writeFileSync(filePath, jsonString, 'utf8');
-    return { success: true, filePath };
-  } catch (e) {
-    return { success: false, reason: e.message };
-  }
+  try { fs.writeFileSync(filePath, jsonString, 'utf8'); return { success: true, filePath }; }
+  catch (e) { return { success: false, reason: e.message }; }
 });
 
-// ── Window ───────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280, height: 800,
@@ -58,6 +48,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
+      devTools: true,
       preload: path.join(__dirname, 'preload.js'),
     },
     show: false,
@@ -69,13 +60,12 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     mainWindow.maximize();
-    mainWindow.webContents.openDevTools();
   });
 
+  // ── F12 to toggle DevTools ────────────────────────────────────────────────
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'F12') {
+    if (input.type === 'keyDown' && input.key === 'F12') {
       mainWindow.webContents.toggleDevTools();
-      event.preventDefault();
     }
   });
 
@@ -84,7 +74,6 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // ── Backup popup on close ─────────────────────────────────────────────────
   mainWindow.on('close', async (e) => {
     if (isQuitting) return;
     e.preventDefault();
@@ -112,12 +101,8 @@ function createWindow() {
           defaultPath: path.join(app.getPath('documents'), `ClinicPro-Backup-${today}.json`),
           filters: [{ name: 'JSON Backup', extensions: ['json'] }],
         });
-        if (!canceled && filePath) {
-          fs.writeFileSync(filePath, jsonString, 'utf8');
-        }
-      } catch (err) {
-        console.error('Backup error:', err);
-      }
+        if (!canceled && filePath) fs.writeFileSync(filePath, jsonString, 'utf8');
+      } catch (err) { console.error('Backup error:', err); }
     }
 
     isQuitting = true;
