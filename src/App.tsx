@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,7 +18,7 @@ import Expenses from "@/pages/Expenses";
 import DailyReport from "@/pages/DailyReport";
 import NotFound from "@/pages/not-found";
 
-import { isSetupDone, getActiveSession, logout } from "@/lib/settings";
+import { isSetupDone, getActiveSession } from "@/lib/settings";
 import { initElectronStorage } from "@/lib/storage";
 import { LicenseGate } from "@/components/LicenseGate";
 import { LicenseBanner } from "@/components/LicenseBanner";
@@ -80,14 +81,12 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <LicenseGate>
-          {state === "setup" && <Setup onDone={() => setState("login")} />}
-          {state === "login" && <Login onLogin={() => setState("app")} />}
-          {state === "app" && (
-            <WouterRouter base="">
-              <AppRoutes onSwitch={() => setState("login")} />
-            </WouterRouter>
-          )}
-          <Toaster />
+          <Router hook={useHashLocation}>
+            {state === "setup" && <Setup onDone={() => setState("login")} />}
+            {state === "login" && <Login onLogin={() => setState("app")} />}
+            {state === "app" && <AppRoutes onSwitch={() => setState("login")} />}
+            <Toaster />
+          </Router>
         </LicenseGate>
       </TooltipProvider>
     </QueryClientProvider>

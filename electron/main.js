@@ -1,6 +1,9 @@
-const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+// ── Remove default menu bar (File/Edit/View) ─────────────────────────────────
+Menu.setApplicationMenu(null);
 
 let mainWindow;
 let isQuitting = false;
@@ -30,16 +33,12 @@ ipcMain.handle('storage-keys',   ()              => { return Object.keys(loadDat
 ipcMain.handle('backup-data', async (_, jsonString) => {
   const today = new Date().toISOString().slice(0, 10);
   const defaultName = `ClinicPro-Backup-${today}.json`;
-
-  // Let user pick where to save
   const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
     title: 'Save ClinicPro Backup',
     defaultPath: path.join(app.getPath('documents'), defaultName),
     filters: [{ name: 'JSON Backup', extensions: ['json'] }],
   });
-
   if (canceled || !filePath) return { success: false, reason: 'canceled' };
-
   try {
     fs.writeFileSync(filePath, jsonString, 'utf8');
     return { success: true, filePath };
@@ -79,10 +78,9 @@ function createWindow() {
 
   // ── Backup popup on close ─────────────────────────────────────────────────
   mainWindow.on('close', async (e) => {
-    if (isQuitting) return; // already confirmed, let it close
-    e.preventDefault(); // hold the close
+    if (isQuitting) return;
+    e.preventDefault();
 
-    // Ask renderer for all data to backup
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'question',
       title: 'Backup Before Exit',
@@ -91,16 +89,11 @@ function createWindow() {
       buttons: ['Backup & Exit', 'Exit Without Backup', 'Cancel'],
       defaultId: 0,
       cancelId: 2,
-      icon: path.join(__dirname, '../public/icon-192.png'),
     });
 
-    if (result.response === 2) {
-      // Cancel — do nothing
-      return;
-    }
+    if (result.response === 2) return;
 
     if (result.response === 0) {
-      // Backup — ask renderer to send data, then save
       try {
         const jsonString = await mainWindow.webContents.executeJavaScript(
           `JSON.stringify(Object.fromEntries(Object.entries(localStorage)))`
@@ -119,7 +112,6 @@ function createWindow() {
       }
     }
 
-    // Exit without backup OR after backup
     isQuitting = true;
     app.quit();
   });
