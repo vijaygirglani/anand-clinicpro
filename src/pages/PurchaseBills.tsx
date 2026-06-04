@@ -198,15 +198,15 @@ export default function PurchaseBills() {
                         <td className="px-2 py-1 w-20"><input value={r.batchNo} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,batchNo:e.target.value}:x))} placeholder="Batch" className={inputCls}/></td>
                         <td className="px-2 py-1 w-20"><input value={r.expiryDate}
   onChange={e => {
-    let v = e.target.value.replace(/[^0-9/]/g, "");
-    // Auto-insert slash: "626" → "6/26", "1226" → "12/26"
-    if (!v.includes("/")) {
-      if (v.length === 3) v = v[0] + "/" + v.slice(1);       // 626 → 6/26
-      else if (v.length === 4) v = v.slice(0,2) + "/" + v.slice(2); // 1226 → 12/26
-    }
+    // Strip to digits only, cap at 4 — recalculate slash every keystroke
+    // so "1127" never gets stuck as "1/127"
+    const d = e.target.value.replace(/[^0-9]/g, "").slice(0, 4);
+    let v = d;
+    if (d.length === 3) v = d[0] + "/" + d.slice(1);        // M/YY
+    else if (d.length === 4) v = d.slice(0, 2) + "/" + d.slice(2); // MM/YY
     setRows(p=>p.map((x,idx)=>idx===i?{...x,expiryDate:v}:x));
   }}
-  placeholder="MM/YY" maxLength={5} className={inputCls}/></td>
+  placeholder="MMYY" maxLength={5} className={inputCls}/></td>
                         <td className="px-2 py-1 w-14"><input type="number" value={r.packSize} min={1} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,packSize:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
                         <td className="px-2 py-1 w-20"><input type="number" value={r.mrpPerPack||""} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,mrpPerPack:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>
                         <td className="px-2 py-1 w-16"><input type="number" value={r.qtyPacksPaid} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,qtyPacksPaid:Number(e.target.value)}:x))} className={inputCls+" text-right"}/></td>

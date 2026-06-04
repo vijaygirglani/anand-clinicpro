@@ -293,12 +293,19 @@ function getTabletsUsedForBatch(billId: string, batchNo: string, medicineName: s
 
 export function formatExpiry(exp: string): string {
   if (!exp) return "—";
-  const parts = exp.split("/");
-  if (parts.length !== 2) return exp;
-  const mm = parts[0].padStart(2, "0");
-  const yy = parts[1].trim();
-  const year = yy.length === 2 ? "20" + yy : yy;
-  return `${mm}/${year}`;
+  // Strip everything except digits — ignore any slash position from storage
+  const d = exp.replace(/[^0-9]/g, "");
+  let mm: string, yy: string;
+  if (d.length === 3) {
+    mm = d[0];           // M + YY  e.g. "127" → month=1, year=27
+    yy = d.slice(1);
+  } else if (d.length === 4) {
+    mm = d.slice(0, 2);  // MM + YY e.g. "0327" → month=03, year=27
+    yy = d.slice(2);
+  } else {
+    return exp;          // too short / unexpected — show as-is
+  }
+  return mm.padStart(2, "0") + "/20" + yy;
 }
 
 function calcDaysToExpiry(expiryDate: string): number {
