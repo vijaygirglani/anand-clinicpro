@@ -648,7 +648,7 @@ export default function Home() {
     }
 
     // Auto-fill fees from bill amount if medicines added
-    const finalFees = validMedRows.length > 0 ? billAmount : Number(data.fees || 0);
+    const finalFees = validMedRows.length > 0 ? billAmount : (Number(data.fees || 0) + (otherCharges ?? 0));
 
     let saved: Patient;
     if (editPatientId) {

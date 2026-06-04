@@ -25,25 +25,38 @@ export default function DailyReport() {
   // Override med stats with inventory data
   const d1Bills = patientBills.filter(b => b.doctorId === 1);
   const d2Bills = patientBills.filter(b => b.doctorId === 2);
-  
+
+  const d1OtherCharges = d1Bills.reduce((s, b) => s + (b.otherCharges ?? 0), 0);
+  const d2OtherCharges = d2Bills.reduce((s, b) => s + (b.otherCharges ?? 0), 0);
+
+  // totalProfit in PatientBill = medMargin + otherCharges (baked at save time)
+  // Strip otherCharges here so medicineProfit shows pure margin only
+  const d1MedProfit = d1Bills.reduce((s, b) => s + b.totalProfit - (b.otherCharges ?? 0), 0);
+  const d2MedProfit = d2Bills.reduce((s, b) => s + b.totalProfit - (b.otherCharges ?? 0), 0);
+
   const report = {
     ...storeReport,
     doctor1: {
       ...storeReport.doctor1,
+      consultationFees: storeReport.doctor1.consultationFees + d1OtherCharges,
       medicineSales: d1Bills.reduce((s, b) => s + b.totalSale, 0),
       medicineCost: d1Bills.reduce((s, b) => s + b.totalCost, 0),
-      medicineProfit: d1Bills.reduce((s, b) => s + b.totalProfit, 0),
-      total: storeReport.doctor1.consultationFees + d1Bills.reduce((s, b) => s + b.totalProfit, 0),
+      medicineProfit: d1MedProfit,
+      total: storeReport.doctor1.consultationFees + d1OtherCharges + d1MedProfit,
     },
     doctor2: {
       ...storeReport.doctor2,
+      consultationFees: storeReport.doctor2.consultationFees + d2OtherCharges,
       medicineSales: d2Bills.reduce((s, b) => s + b.totalSale, 0),
       medicineCost: d2Bills.reduce((s, b) => s + b.totalCost, 0),
-      medicineProfit: d2Bills.reduce((s, b) => s + b.totalProfit, 0),
-      total: storeReport.doctor2.consultationFees + d2Bills.reduce((s, b) => s + b.totalProfit, 0),
+      medicineProfit: d2MedProfit,
+      total: storeReport.doctor2.consultationFees + d2OtherCharges + d2MedProfit,
     },
+    totalConsultation: storeReport.doctor1.consultationFees + d1OtherCharges + storeReport.doctor2.consultationFees + d2OtherCharges,
     totalMedicineSales: patientBills.reduce((s, b) => s + b.totalSale, 0),
-    totalMedicineProfit: patientBills.reduce((s, b) => s + b.totalProfit, 0),
+    totalMedicineProfit: patientBills.reduce((s, b) => s + b.totalProfit - (b.otherCharges ?? 0), 0),
+    grandTotal: storeReport.doctor1.consultationFees + d1OtherCharges + d1MedProfit +
+                storeReport.doctor2.consultationFees + d2OtherCharges + d2MedProfit,
   };
 
   const whatsAppText = generateWhatsAppReport(date, settings.clinicName, {
