@@ -1,4 +1,6 @@
 // ── src/lib/license.ts ──────────────────────────────────────────────────────
+import { storage } from "./storage";
+
 const LICENSE_KEY   = "manglam_license_key";
 const SECRET_SALT   = "MNGM2024CLPRO";
 const GRACE_DAYS    = 7;
@@ -12,7 +14,6 @@ export interface LicenseInfo {
   status: "active" | "warning" | "grace" | "blocked";
 }
 
-// ── Hash (identical in TS and plain JS) ──────────────────────────────────────
 function hash32(str: string): number {
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
   for (let i = 0; i < str.length; i++) {
@@ -29,7 +30,6 @@ function toB36(n: number): string {
   return Math.abs(Math.floor(n)).toString(36).toUpperCase().padStart(4, "0").substring(0, 4);
 }
 
-// ── Generate (used in keygen.html — logic duplicated there in plain JS) ──────
 export function generateLicenseKey(expiryDate: string): string {
   const days = Math.floor(new Date(expiryDate + "T00:00:00").getTime() / 86400000);
   const daysStr = days.toString(36).toUpperCase().padStart(6, "0");
@@ -39,7 +39,6 @@ export function generateLicenseKey(expiryDate: string): string {
   return `MNGM-${daysStr}-${h1}-${h2}-${h3}`;
 }
 
-// ── Decode & validate ─────────────────────────────────────────────────────────
 export function decodeLicenseKey(key: string): { expiryDate: string } | null {
   try {
     const parts = key.trim().toUpperCase().split("-");
@@ -59,18 +58,17 @@ export function decodeLicenseKey(key: string): { expiryDate: string } | null {
   }
 }
 
-// ── Storage ───────────────────────────────────────────────────────────────────
+// ── Use storage adapter (works in both Electron and browser) ─────────────────
 export function saveLicenseKey(key: string): void {
-  localStorage.setItem(LICENSE_KEY, key.trim().toUpperCase());
+  storage.setItem(LICENSE_KEY, key.trim().toUpperCase());
 }
 export function getSavedKey(): string | null {
-  return localStorage.getItem(LICENSE_KEY);
+  return storage.getItem(LICENSE_KEY);
 }
 export function clearLicense(): void {
-  localStorage.removeItem(LICENSE_KEY);
+  storage.removeItem(LICENSE_KEY);
 }
 
-// ── Status ────────────────────────────────────────────────────────────────────
 export function getLicenseInfo(): LicenseInfo {
   const blocked: LicenseInfo = {
     valid: false, expiryDate: new Date(),
