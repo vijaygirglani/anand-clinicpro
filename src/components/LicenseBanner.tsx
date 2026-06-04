@@ -4,8 +4,6 @@ import { AlertTriangle, Clock } from "lucide-react";
 
 export function LicenseBanner() {
   const info = getLicenseInfo();
-  console.log("LicenseBanner rendering", info.status);
-  console.log("License info:", info);
 
   if (info.status === "active" || info.status === "blocked") return null;
 
