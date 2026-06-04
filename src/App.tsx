@@ -21,7 +21,8 @@ import NotFound from "@/pages/not-found";
 import { isSetupDone, getActiveSession } from "@/lib/settings";
 import { initElectronStorage } from "@/lib/storage";
 import { LicenseGate } from "@/components/LicenseGate";
-import { LicenseBanner } from "@/components/LicenseBanner";
+import { getLicenseInfo } from "@/lib/license";
+import { AlertTriangle, Clock } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 5 * 60 * 1000, retry: 1 } },
@@ -39,7 +40,6 @@ function AppRoutes({ onSwitch }: { onSwitch: () => void }) {
   (window as any).__clinicproSwitch = onSwitch;
   return (
     <ThemeProvider>
-      <LicenseBanner />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/daily-register" component={DailyRegister} />
@@ -53,6 +53,27 @@ function AppRoutes({ onSwitch }: { onSwitch: () => void }) {
       </Switch>
     </ThemeProvider>
   );
+}
+
+// ── Inline banner — reads AFTER storage is ready ──────────────────────────────
+function LicenseBanner() {
+  const info = getLicenseInfo();
+  if (info.status === "active" || info.status === "blocked") return null;
+  if (info.status === "warning") return (
+    <div className="w-full px-4 py-2 flex items-center justify-center gap-2 text-sm font-semibold"
+      style={{ background: "linear-gradient(90deg,#fef9c3,#fde68a)", color: "#92400e" }}>
+      <Clock className="w-4 h-4 shrink-0" />
+      <span>License expires in <strong>{info.daysLeft} days</strong> — {info.expiryDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}. Please renew to avoid interruption.</span>
+    </div>
+  );
+  if (info.status === "grace") return (
+    <div className="w-full px-4 py-2 flex items-center justify-center gap-2 text-sm font-semibold"
+      style={{ background: "linear-gradient(90deg,#fed7aa,#fca5a5)", color: "#7f1d1d" }}>
+      <AlertTriangle className="w-4 h-4 shrink-0 animate-pulse" />
+      <span>⚠️ License EXPIRED — Grace period: <strong>{info.graceDaysLeft} day{info.graceDaysLeft !== 1 ? "s" : ""} left</strong>. Contact Manglam ClinicPro to renew.</span>
+    </div>
+  );
+  return null;
 }
 
 export default function App() {
@@ -81,6 +102,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <LicenseGate>
+          <LicenseBanner />
           <Router hook={useHashLocation}>
             {state === "setup" && <Setup onDone={() => setState("login")} />}
             {state === "login" && <Login onLogin={() => setState("app")} />}
