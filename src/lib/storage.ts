@@ -7,9 +7,17 @@ const isElectron = typeof window !== 'undefined' && !!(window as any).electronSt
 export const storage = {
   getItem(key: string): string | null {
     if (isElectron) {
-      // Electron: sync via cached data
-      // We use a synchronous cache that gets populated on first load
-      return electronCache[key] ?? null;
+      // Check cache first, then fall back to localStorage
+      if (electronCache[key] !== undefined) return electronCache[key];
+      // Fallback: check localStorage (for keys saved by old versions)
+      const lsVal = localStorage.getItem(key);
+      if (lsVal !== null) {
+        // Migrate to cache + disk
+        electronCache[key] = lsVal;
+        (window as any).electronStorage.setItem(key, lsVal);
+        localStorage.removeItem(key);
+      }
+      return lsVal;
     }
     return localStorage.getItem(key);
   },
@@ -18,6 +26,8 @@ export const storage = {
     if (isElectron) {
       electronCache[key] = value;
       (window as any).electronStorage.setItem(key, value);
+      // Also keep in localStorage as backup for license reading
+      localStorage.setItem(key, value);
     } else {
       localStorage.setItem(key, value);
     }
@@ -27,6 +37,7 @@ export const storage = {
     if (isElectron) {
       delete electronCache[key];
       (window as any).electronStorage.removeItem(key);
+      localStorage.removeItem(key);
     } else {
       localStorage.removeItem(key);
     }
