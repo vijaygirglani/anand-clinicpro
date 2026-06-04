@@ -1,9 +1,11 @@
 // ── src/components/LicenseBanner.tsx ────────────────────────────────────────
+import { useState, useEffect } from "react";
 import { getLicenseInfo } from "@/lib/license";
 import { AlertTriangle, Clock } from "lucide-react";
 
 export function LicenseBanner() {
-  const info = getLicenseInfo();
+  const [info, setInfo] = useState(() => getLicenseInfo());
+  useEffect(() => { setInfo(getLicenseInfo()); }, []);
 
   if (info.status === "active" || info.status === "blocked") return null;
 
