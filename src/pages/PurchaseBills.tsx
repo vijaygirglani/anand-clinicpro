@@ -2,22 +2,12 @@ import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import {
   getPurchaseBills, savePurchaseBill, deletePurchaseBill, addPaymentToBill,
-  getSupplierSummary, calcLandingCost, newId,
+  getSupplierSummary, calcLandingCost, newId, formatExpiry,
   type PurchaseBill, type PurchaseBillItem,
 } from "@/lib/inventory";
 import { useToast } from "@/hooks/use-toast";
 import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X, Pencil, IndianRupee, BarChart3, Building2, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
-
-function formatExpiry(exp: string): string {
-  if (!exp) return "—";
-  const parts = exp.split("/");
-  if (parts.length !== 2) return exp;
-  const mm = parts[0].padStart(2, "0");
-  const yy = parts[1].trim();
-  const year = yy.length === 2 ? "20" + yy : yy;
-  return `${mm}/${year}`;
-}
 
 interface RowDraft {
   medicineName: string; batchNo: string; expiryDate: string;

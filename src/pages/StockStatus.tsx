@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
-import { getAllBatchStocks, discontinueBatch, reactivateBatch, getStockValuation, setBatchReorderLevel, dismissStockAlert } from "@/lib/inventory";
+import { getAllBatchStocks, discontinueBatch, reactivateBatch, getStockValuation, setBatchReorderLevel, dismissStockAlert, formatExpiry } from "@/lib/inventory";
 import { getSettings, getActiveDoctor } from "@/lib/settings";
 import { Package, AlertTriangle, XCircle, Clock, Ban, BellOff, Edit2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -126,7 +126,7 @@ export default function StockStatus() {
                       ${b.discontinued ? "opacity-50 bg-slate-50" : b.stockStatus === "out" ? "bg-red-50/40" : b.stockStatus === "low" ? "bg-orange-50/40" : i%2===0?"bg-white":"bg-slate-50/20"}`}>
                     <td className="px-4 py-2.5 font-semibold text-slate-900">{b.medicineName}{b.discontinued && <span className="ml-2 text-xs text-slate-400">(discontinued)</span>}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{b.batchNo||"—"}</td>
-                    <td className="px-4 py-2.5 text-slate-600">{b.expiryDate||"—"}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{formatExpiry(b.expiryDate)}</td>
                     <td className="px-4 py-2.5 text-slate-600 text-xs">{b.packSize}</td>
                     <td className="px-4 py-2.5 font-semibold text-slate-800">₹{b.mrpPerTablet.toFixed(2)}</td>
                     <td className="px-4 py-2.5 text-slate-500 text-xs">₹{b.mrpPerPack.toFixed(2)}</td>
@@ -205,7 +205,7 @@ export default function StockStatus() {
                     className={`border-b border-slate-100 ${b.expiryStatus==="expired"?"bg-red-50/40":b.expiryStatus==="critical"?"bg-red-50/20":b.expiryStatus==="soon"?"bg-orange-50/20":i%2===0?"bg-white":"bg-slate-50/20"}`}>
                     <td className="px-4 py-2.5 font-semibold text-slate-900">{b.medicineName}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{b.batchNo||"—"}</td>
-                    <td className="px-4 py-2.5 font-semibold text-slate-700">{b.expiryDate||"—"}</td>
+                    <td className="px-4 py-2.5 font-semibold text-slate-700">{formatExpiry(b.expiryDate)}</td>
                     <td className="px-4 py-2.5 text-slate-600">{b.packSize}</td>
                     <td className="px-4 py-2.5 font-bold text-slate-800">{b.tabletsAvailable} tabs</td>
                     <td className="px-4 py-2.5">{b.daysToExpiry < 0 ? <span className="text-red-600 font-bold">EXPIRED</span> : <span className={b.daysToExpiry <= 60 ? "text-orange-600 font-bold" : "text-slate-600"}>{b.daysToExpiry} days</span>}</td>

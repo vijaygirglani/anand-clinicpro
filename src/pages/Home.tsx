@@ -28,7 +28,7 @@ import { getActiveDoctor } from "@/lib/settings";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
 import {
   searchMedicineNames, getAvailableBatchesForMedicine,
-  savePatientBill, deletePatientBill, newId,
+  savePatientBill, deletePatientBill, newId, formatExpiry,
   type PatientBill, type PatientMedicineItem,
 } from "@/lib/inventory";
 import { format } from "date-fns";
@@ -315,7 +315,7 @@ export default function Home() {
             mrpPerTablet: batch.mrpPerTablet,
             currentStock: batch.tabletsAvailable,
             bestBatch: batch,
-            batchLabel: `Batch ${batch.batchNo} · exp:${batch.expiryDate}`,
+            batchLabel: `Batch ${batch.batchNo} · exp:${formatExpiry(batch.expiryDate)}`,
           });
         }
       }

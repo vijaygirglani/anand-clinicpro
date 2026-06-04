@@ -291,6 +291,16 @@ function getTabletsUsedForBatch(billId: string, batchNo: string, medicineName: s
   return used + adjTotal;
 }
 
+export function formatExpiry(exp: string): string {
+  if (!exp) return "—";
+  const parts = exp.split("/");
+  if (parts.length !== 2) return exp;
+  const mm = parts[0].padStart(2, "0");
+  const yy = parts[1].trim();
+  const year = yy.length === 2 ? "20" + yy : yy;
+  return `${mm}/${year}`;
+}
+
 function calcDaysToExpiry(expiryDate: string): number {
   if (!expiryDate) return 9999;
   const parts = expiryDate.split("/");
