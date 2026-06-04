@@ -582,14 +582,14 @@ export default function Home() {
     const visitDate = data.visitDate || todayStr;
 
     // Stock check before saving
-    const validMedRows = medRowsRef.current.filter(r => r.medicineName.trim() && r.qty > 0);
+    const validMedRows = medRowsRef.current.filter(r => r.medicineName.trim() && r.qty !== 0);
     // Stock check using new inventory system
     if (validMedRows.length > 0) {
       for (const r of validMedRows) {
         if (r.billId) {
           const batches = getAvailableBatchesForMedicine(r.medicineName);
           const available = batches.reduce((s, b) => s + b.tabletsAvailable, 0);
-          if (available < r.qty) {
+          if (r.qty > 0 && available < r.qty) {
             toast({ title: `Insufficient stock: ${r.medicineName}`, description: `Required: ${r.qty}, Available: ${available}`, variant: "destructive" });
             return;
           }
@@ -1273,7 +1273,7 @@ export default function Home() {
                                 ) : <span className="text-slate-300 text-xs">—</span>}
                               </td>
                               <td className="px-2 py-1">
-                                <input type="number" value={r.qty} min={1}
+                                <input type="number" value={r.qty}
                                   onChange={e => updateMedRow(i, "qty", Number(e.target.value))}
                                   className="w-16 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white" />
                               </td>
