@@ -1,123 +1,98 @@
 // ── src/lib/license.ts ──────────────────────────────────────────────────────
-// Manglam ClinicPro — License System
-// Key format: MNGM-XXXX-XXXX-XXXX-XXXX
-
-const LICENSE_STORAGE_KEY = "manglam_license_key";
-const SECRET_SALT = "MNGM2024CLPRO";
-const GRACE_DAYS = 7;
-const WARNING_DAYS = 30;
+const LICENSE_KEY   = "manglam_license_key";
+const SECRET_SALT   = "MNGM2024CLPRO";
+const GRACE_DAYS    = 7;
+const WARNING_DAYS  = 30;
 
 export interface LicenseInfo {
   valid: boolean;
-  clinicName: string;
   expiryDate: Date;
   daysLeft: number;
   graceDaysLeft: number;
   status: "active" | "warning" | "grace" | "blocked";
 }
 
-// ── Checksum ─────────────────────────────────────────────────────────────────
-function checksum(str: string): string {
-  let h = 5381;
+// ── Hash (identical in TS and plain JS) ──────────────────────────────────────
+function hash32(str: string): number {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
   for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) + h) ^ str.charCodeAt(i);
-    h = h & 0xffffffff;
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
   }
-  return Math.abs(h).toString(36).toUpperCase().padStart(8, "0");
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0));
 }
 
-// ── Key generation (used in keygen.html too, duplicated there in plain JS) ──
-export function generateLicenseKey(clinicName: string, expiryYYYYMMDD: string): string {
-  const payload = `${clinicName.trim().toUpperCase()}::${expiryYYYYMMDD}`;
-  const cs = checksum(payload + SECRET_SALT);
-  // Encode payload to base36-like string
-  const encoded = btoa(unescape(encodeURIComponent(payload + "::" + cs)))
-    .replace(/[^A-Z0-9]/gi, "")
-    .toUpperCase()
-    .padEnd(16, "0")
-    .substring(0, 16);
-  return `MNGM-${encoded.slice(0,4)}-${encoded.slice(4,8)}-${encoded.slice(8,12)}-${encoded.slice(12,16)}`;
+function toB36(n: number): string {
+  return Math.abs(Math.floor(n)).toString(36).toUpperCase().padStart(4, "0").substring(0, 4);
 }
 
-// ── Decode ───────────────────────────────────────────────────────────────────
-export function decodeLicenseKey(key: string): { clinicName: string; expiryDate: string } | null {
+// ── Generate (used in keygen.html — logic duplicated there in plain JS) ──────
+export function generateLicenseKey(expiryDate: string): string {
+  const days = Math.floor(new Date(expiryDate + "T00:00:00").getTime() / 86400000);
+  const daysStr = days.toString(36).toUpperCase().padStart(6, "0");
+  const h1 = toB36(hash32(daysStr + SECRET_SALT + "A"));
+  const h2 = toB36(hash32(daysStr + SECRET_SALT + "B"));
+  const h3 = toB36(hash32(daysStr + SECRET_SALT + "C"));
+  return `MNGM-${daysStr}-${h1}-${h2}-${h3}`;
+}
+
+// ── Decode & validate ─────────────────────────────────────────────────────────
+export function decodeLicenseKey(key: string): { expiryDate: string } | null {
   try {
-    const clean = key.trim().toUpperCase().replace(/\s/g, "");
-    if (!clean.startsWith("MNGM-")) return null;
-    const parts = clean.split("-");
-    // parts: ["MNGM", "XXXX", "XXXX", "XXXX", "XXXX"]
-    if (parts.length !== 5) return null;
-    const encoded = parts.slice(1).join("");
-    // Pad with = for base64
-    const padded = encoded + "=".repeat((4 - (encoded.length % 4)) % 4);
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(escape(atob(padded)));
-    } catch {
-      return null;
-    }
-    const segments = decoded.split("::");
-    if (segments.length < 3) return null;
-    const clinicName = segments[0];
-    const expiryDate = segments[1];
-    const storedCs = segments[2];
-    const payload = `${clinicName}::${expiryDate}`;
-    const expectedCs = checksum(payload + SECRET_SALT);
-    if (storedCs !== expectedCs) return null;
-    // Validate date
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) return null;
-    return { clinicName, expiryDate };
+    const parts = key.trim().toUpperCase().split("-");
+    if (parts.length !== 5 || parts[0] !== "MNGM") return null;
+    const daysStr = parts[1];
+    const h1 = parts[2], h2 = parts[3], h3 = parts[4];
+    const days = parseInt(daysStr, 36);
+    if (isNaN(days) || days < 10000) return null;
+    const eh1 = toB36(hash32(daysStr + SECRET_SALT + "A"));
+    const eh2 = toB36(hash32(daysStr + SECRET_SALT + "B"));
+    const eh3 = toB36(hash32(daysStr + SECRET_SALT + "C"));
+    if (h1 !== eh1 || h2 !== eh2 || h3 !== eh3) return null;
+    const expiryDate = new Date(days * 86400000).toISOString().split("T")[0];
+    return { expiryDate };
   } catch {
     return null;
   }
 }
 
-// ── Storage ──────────────────────────────────────────────────────────────────
+// ── Storage ───────────────────────────────────────────────────────────────────
 export function saveLicenseKey(key: string): void {
-  localStorage.setItem(LICENSE_STORAGE_KEY, key.trim().toUpperCase());
+  localStorage.setItem(LICENSE_KEY, key.trim().toUpperCase());
 }
-
 export function getSavedKey(): string | null {
-  return localStorage.getItem(LICENSE_STORAGE_KEY);
+  return localStorage.getItem(LICENSE_KEY);
 }
-
 export function clearLicense(): void {
-  localStorage.removeItem(LICENSE_STORAGE_KEY);
+  localStorage.removeItem(LICENSE_KEY);
 }
 
-// ── Status ───────────────────────────────────────────────────────────────────
+// ── Status ────────────────────────────────────────────────────────────────────
 export function getLicenseInfo(): LicenseInfo {
-  const key = getSavedKey();
   const blocked: LicenseInfo = {
-    valid: false, clinicName: "",
-    expiryDate: new Date(), daysLeft: -999,
-    graceDaysLeft: 0, status: "blocked",
+    valid: false, expiryDate: new Date(),
+    daysLeft: -999, graceDaysLeft: 0, status: "blocked",
   };
-
+  const key = getSavedKey();
   if (!key) return blocked;
   const decoded = decodeLicenseKey(key);
   if (!decoded) return blocked;
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const expiry = new Date(decoded.expiryDate + "T00:00:00");
-  const msPerDay = 86400000;
-  const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / msPerDay);
+  const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
   const graceDaysLeft = daysLeft < 0 ? Math.max(0, GRACE_DAYS + daysLeft) : GRACE_DAYS;
 
   let status: LicenseInfo["status"];
-  if (daysLeft > WARNING_DAYS)       status = "active";
-  else if (daysLeft > 0)             status = "warning";
-  else if (graceDaysLeft > 0)        status = "grace";
-  else                               status = "blocked";
+  if (daysLeft > WARNING_DAYS)  status = "active";
+  else if (daysLeft > 0)        status = "warning";
+  else if (graceDaysLeft > 0)   status = "grace";
+  else                          status = "blocked";
 
-  return {
-    valid: status !== "blocked",
-    clinicName: decoded.clinicName,
-    expiryDate: expiry,
-    daysLeft,
-    graceDaysLeft,
-    status,
-  };
+  return { valid: status !== "blocked", expiryDate: expiry, daysLeft, graceDaysLeft, status };
 }
 
 export function isLicenseBlocked(): boolean {
