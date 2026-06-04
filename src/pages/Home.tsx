@@ -685,7 +685,8 @@ export default function Home() {
       });
     }
     // Save patient bill to inventory system (deducts stock, tracks profit)
-    if (validMedRows.length > 0) {
+    // Save whenever there are medicines OR a charge/discount (otherCharges !== 0)
+    if (validMedRows.length > 0 || otherCharges !== 0) {
       const items: PatientMedicineItem[] = validMedRows.map(r => {
         const salePrice = r.mrp * r.qty;
         const cost = r.landingCostPerTablet * r.qty;
@@ -701,6 +702,7 @@ export default function Home() {
           profit: salePrice - cost,
         };
       });
+      // items may be [] when otherCharges-only — reduce on empty array safely returns 0
       const medSale   = items.reduce((s, i) => s + i.salePrice, 0);
       const medCost   = items.reduce((s, i) => s + i.cost, 0);
       const medProfit = items.reduce((s, i) => s + i.profit, 0);
@@ -710,10 +712,10 @@ export default function Home() {
         patientName: saved.name,
         doctorId: activeDoctor?.id || 1,
         billDate: visitDate,
-        items,
+        items,                              // [] when no medicines
         otherCharges: otherCharges ?? 0,
         totalSale:   medSale   + (otherCharges ?? 0),
-        totalCost:   medCost,
+        totalCost:   medCost,               // 0 when no medicines
         totalProfit: medProfit + (otherCharges ?? 0),
         createdAt: new Date().toISOString(),
       };
