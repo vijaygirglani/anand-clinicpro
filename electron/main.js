@@ -69,6 +69,14 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     mainWindow.maximize();
+    mainWindow.webContents.openDevTools();
+  });
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
