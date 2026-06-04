@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { getDailyProfitReport as getInventoryReport, getPatientBillsByDate, getExpensesByDateRange } from "@/lib/inventory";
 import { getDailyProfitReport, generateWhatsAppReport, exportBackup } from "@/lib/store";
-import { getSettings } from "@/lib/settings";
+import { getSettings, isAdmin } from "@/lib/settings";
 import { useToast } from "@/hooks/use-toast";
 import { BarChart3, Copy, Download, Users, IndianRupee, Pill, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
@@ -11,6 +11,7 @@ export default function DailyReport() {
   const { toast } = useToast();
   const settings = getSettings();
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const admin = isAdmin();
 
   // Use inventory-based profit report (reads from cp_patient_bills)
   const patientBills = getPatientBillsByDate(date);
@@ -67,7 +68,7 @@ export default function DailyReport() {
     toast({ title: "Backup downloaded" });
   };
 
-  const fmt = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+  const fmt = (n: number) => `₹${(Math.round(n * 100) / 100).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   const StatCard = ({ label, value, sub, color = "slate" }: { label: string; value: string; sub?: string; color?: string }) => (
     <div className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm`}>
@@ -105,8 +106,8 @@ export default function DailyReport() {
             className="mt-1.5 block border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-colors" />
         </div>
 
-        {/* Clinic Total Cards */}
-        <div>
+        {/* Clinic Total Cards — admin only */}
+        {admin && <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Clinic Total</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="Total Patients" value={String(report.totalPatients)} />
@@ -115,13 +116,13 @@ export default function DailyReport() {
             <StatCard label="Grand Total" value={fmt(report.grandTotal)} color="green"
               sub={`Cost: ${fmt(report.totalMedicineCost)}`} />
           </div>
-        </div>
+        </div>}
 
         {/* Per Doctor */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-          {/* Doctor 1 — Blue */}
-          <div className="bg-white border-2 border-blue-100 rounded-2xl overflow-hidden shadow-sm">
+          {/* Doctor 1 — Blue — admin only */}
+          {admin && <div className="bg-white border-2 border-blue-100 rounded-2xl overflow-hidden shadow-sm">
             <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-4">
               <p className="text-blue-100 text-xs font-semibold uppercase tracking-wider">Doctor 1</p>
               <p className="text-white font-bold text-lg">{settings.doctor1Name}</p>
@@ -141,16 +142,13 @@ export default function DailyReport() {
                 <span className="flex items-center gap-2 text-sm text-slate-600"><Pill className="w-4 h-4 text-slate-400" />Med Cost</span>
                 <span className="font-semibold text-slate-500">{fmt(report.doctor1.medicineCost)}</span>
               </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
+              <div className="flex justify-between items-center py-2">
                 <span className="flex items-center gap-2 text-sm text-slate-600"><TrendingUp className="w-4 h-4 text-green-400" />Med Profit</span>
                 <span className="font-bold text-green-600">{fmt(report.doctor1.medicineProfit)}</span>
               </div>
-              <div className="flex justify-between items-center pt-2">
-                <span className="font-bold text-slate-800">Total</span>
-                <span className="font-bold text-blue-600 text-lg">{fmt(report.doctor1.total)}</span>
-              </div>
+
             </div>
-          </div>
+          </div>}
 
           {/* Doctor 2 — Emerald */}
           <div className="bg-white border-2 border-emerald-100 rounded-2xl overflow-hidden shadow-sm">
@@ -173,14 +171,11 @@ export default function DailyReport() {
                 <span className="flex items-center gap-2 text-sm text-slate-600"><Pill className="w-4 h-4 text-slate-400" />Med Cost</span>
                 <span className="font-semibold text-slate-500">{fmt(report.doctor2.medicineCost)}</span>
               </div>
-              <div className="flex justify-between items-center py-2 border-b border-slate-100">
+              <div className="flex justify-between items-center py-2">
                 <span className="flex items-center gap-2 text-sm text-slate-600"><TrendingUp className="w-4 h-4 text-green-400" />Med Profit</span>
                 <span className="font-bold text-green-600">{fmt(report.doctor2.medicineProfit)}</span>
               </div>
-              <div className="flex justify-between items-center pt-2">
-                <span className="font-bold text-slate-800">Total</span>
-                <span className="font-bold text-emerald-600 text-lg">{fmt(report.doctor2.total)}</span>
-              </div>
+
             </div>
           </div>
         </div>

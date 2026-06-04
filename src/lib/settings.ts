@@ -1,5 +1,4 @@
 import { storage } from "./storage";
-// ClinicPro — Clinic & Doctor Settings
 
 export interface ClinicSettings {
   clinicName: string;
@@ -55,13 +54,17 @@ export function completeSetup(settings: Omit<ClinicSettings, "isSetupDone">) {
   saveSettings({ ...settings, isSetupDone: true });
 }
 
-// Returns null if wrong password, doctorId if correct
+export function isAdmin(): boolean {
+  const session = getActiveSession();
+  return session?.doctorId === 1;
+}
+
 export function loginWithPassword(doctorId: 1 | 2, password: string): boolean {
   const s = getSettings();
   const correctPwd = doctorId === 1 ? s.doctor1Password : s.doctor2Password;
-  // If no password set, allow blank
   if (correctPwd && correctPwd !== password) return false;
-  storage.setItem(SESSION_KEY, JSON.stringify({
+  // ── No persistent session — store in sessionStorage so it clears on app close ──
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({
     doctorId,
     loginTime: new Date().toISOString(),
   }));
@@ -69,19 +72,19 @@ export function loginWithPassword(doctorId: 1 | 2, password: string): boolean {
 }
 
 export function login(doctorId: 1 | 2) {
-  storage.setItem(SESSION_KEY, JSON.stringify({
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({
     doctorId,
     loginTime: new Date().toISOString(),
   }));
 }
 
 export function logout() {
-  storage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
 }
 
 export function getActiveSession(): ActiveSession | null {
   try {
-    const stored = storage.getItem(SESSION_KEY);
+    const stored = sessionStorage.getItem(SESSION_KEY);
     return stored ? JSON.parse(stored) : null;
   } catch { return null; }
 }
