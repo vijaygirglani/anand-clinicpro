@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Layout } from "@/components/Layout";
 import {
-  addPatient, lookupByMobile, lookupByName, findComplaintCode,
+  addPatient, updatePatient, getPatients, lookupByMobile, lookupByName, findComplaintCode,
   getNextPatientNo, getNextCaseNo, lookupByComplaint, lookupByAddress,
   searchPatientSuggestions,
   type Patient, type PatientSuggestion,
@@ -28,7 +28,7 @@ import { getActiveDoctor } from "@/lib/settings";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
 import {
   searchMedicineNames, getAvailableBatchesForMedicine,
-  savePatientBill, deletePatientBill, newId, formatExpiry,
+  savePatientBill, deletePatientBill, getPatientBills, newId, formatExpiry,
   type PatientBill, type PatientMedicineItem,
 } from "@/lib/inventory";
 import { format } from "date-fns";
@@ -271,6 +271,8 @@ export default function Home() {
     });
   };
   const [otherCharges, setOtherCharges] = useState<number>(0);
+  const [editPatientId, setEditPatientId] = useState<number | null>(null);
+  const [editBillId, setEditBillId]       = useState<string | null>(null);
   const medGross = medRows.reduce((s, r) => s + r.mrp * r.qty, 0);
   const billAmount = medGross + otherCharges;
   // medNames no longer needed - using searchMedicineNames from inventory
@@ -332,6 +334,54 @@ export default function Home() {
     const close = () => { setMedSuggestions([]); setActiveMedIdx(null); };
     window.addEventListener('scroll', close, true);
     return () => window.removeEventListener('scroll', close, true);
+  }, []);
+
+  // ── Edit mode: pre-fill form from /?edit=PATIENTID ──────────────────────────
+  useEffect(() => {
+    const hash = window.location.hash;
+    const qIdx = hash.indexOf("?");
+    if (qIdx === -1) return;
+    const params = new URLSearchParams(hash.slice(qIdx));
+    const pidStr = params.get("edit");
+    if (!pidStr) return;
+    const pid = Number(pidStr);
+    if (!pid) return;
+
+    const patient = getPatients().find(p => p.id === pid);
+    if (!patient) return;
+
+    form.reset({
+      name:          patient.name,
+      mobile:        patient.mobile,
+      visitDate:     patient.visitDate,
+      age:           patient.age,
+      ageMonths:     patient.ageMonths  || 0,
+      weight:        patient.weight     || "",
+      address:       patient.address    || "",
+      complaintCode: patient.complaintCode || "",
+      complaint:     patient.complaint  || "",
+      treatment:     patient.treatment  || "",
+      advice:        patient.advice     || "",
+      reports:       patient.reports    || "",
+      fees:          patient.fees,
+    });
+
+    const bill = getPatientBills().find(
+      b => b.patientId === pid && b.billDate === patient.visitDate
+    );
+    if (bill) {
+      setMedRowsSync(bill.items.map(i => ({
+        medicineName:         i.medicineName,
+        qty:                  i.qtyTablets,
+        mrp:                  i.mrpPerTablet,
+        batchNo:              i.batchNo,
+        billId:               i.billId,
+        landingCostPerTablet: i.landingCostPerTablet,
+      })));
+      setOtherCharges(bill.otherCharges ?? 0);
+      setEditBillId(bill.id);
+    }
+    setEditPatientId(pid);
   }, []);
 
   // ── Pathya-Apathya suggest state ──
@@ -597,18 +647,43 @@ export default function Home() {
       }
     }
 
-    const autoPatientNo = getNextPatientNo(visitDate);
     // Auto-fill fees from bill amount if medicines added
     const finalFees = validMedRows.length > 0 ? billAmount : Number(data.fees || 0);
-    const saved = addPatient({
-      name: data.name, mobile: data.mobile, patientNo: autoPatientNo,
-      age: data.age || 0, ageMonths: data.ageMonths || 0,
-      weight: data.weight || "", address: data.address || "",
-      complaintCode: data.complaintCode || "", complaint: data.complaint || "",
-      treatment: data.treatment || "", advice: data.advice || "",
-      reports: data.reports || "", fees: finalFees, doctorId: activeDoctor?.id || 1,
-      attachments, registerType, visitDate,
-    });
+
+    let saved: Patient;
+    if (editPatientId) {
+      // Edit mode: overwrite existing patient record
+      const updated = updatePatient(editPatientId, {
+        name: data.name, mobile: data.mobile,
+        age: data.age || 0, ageMonths: data.ageMonths || 0,
+        weight: data.weight || "", address: data.address || "",
+        complaintCode: data.complaintCode || "", complaint: data.complaint || "",
+        treatment: data.treatment || "", advice: data.advice || "",
+        reports: data.reports || "", fees: finalFees,
+        registerType, attachments, visitDate,
+      });
+      if (!updated) {
+        toast({ title: "Error updating patient", variant: "destructive" });
+        return;
+      }
+      saved = updated;
+      // If all medicines removed in edit, delete the old bill so stock is restored
+      if (editBillId && validMedRows.length === 0) {
+        deletePatientBill(editPatientId);
+      }
+    } else {
+      // New patient
+      const autoPatientNo = getNextPatientNo(visitDate);
+      saved = addPatient({
+        name: data.name, mobile: data.mobile, patientNo: autoPatientNo,
+        age: data.age || 0, ageMonths: data.ageMonths || 0,
+        weight: data.weight || "", address: data.address || "",
+        complaintCode: data.complaintCode || "", complaint: data.complaint || "",
+        treatment: data.treatment || "", advice: data.advice || "",
+        reports: data.reports || "", fees: finalFees, doctorId: activeDoctor?.id || 1,
+        attachments, registerType, visitDate,
+      });
+    }
     // Save patient bill to inventory system (deducts stock, tracks profit)
     if (validMedRows.length > 0) {
       const items: PatientMedicineItem[] = validMedRows.map(r => {
@@ -630,7 +705,7 @@ export default function Home() {
       const medCost   = items.reduce((s, i) => s + i.cost, 0);
       const medProfit = items.reduce((s, i) => s + i.profit, 0);
       const patientBill: PatientBill = {
-        id: newId(),
+        id: editBillId ?? newId(),
         patientId: saved.id,
         patientName: saved.name,
         doctorId: activeDoctor?.id || 1,
@@ -668,6 +743,8 @@ export default function Home() {
     setHistoryMobile("");
     setMedRowsSync([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
     setOtherCharges(0);
+    setEditPatientId(null);
+    setEditBillId(null);
     setSelectedPADisease(null);
     setPaMatches([]);
     setShowPAPanel(false);

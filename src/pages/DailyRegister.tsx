@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
 import {
-  getDailyStats, updatePatient, deletePatient, getAllDates,
+  getDailyStats, deletePatient, getAllDates,
   exportBackup, importBackup, addPatient, getMonthlyStats,
   type Patient, type DailyStats,
 } from "@/lib/store";
@@ -24,35 +25,14 @@ import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
 import { deletePatientBill } from "@/lib/inventory";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
-import * as z from "zod";
-
-const editSchema = z.object({
-  name: z.string().min(1),
-  age: z.coerce.number().optional(),
-  ageMonths: z.coerce.number().optional(),
-  weight: z.string().optional(),
-  address: z.string().optional(),
-  mobile: z.string(),
-  patientNo: z.string().optional(),
-  complaintCode: z.string().optional(),
-  complaint: z.string().optional(),
-  treatment: z.string().optional(),
-  advice: z.string().optional(),
-  reports: z.string().optional(),
-  fees: z.coerce.number().optional(),
-  doctorId: z.number().optional(),
-});
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 export default function DailyRegister() {
+  const [, navigate] = useLocation();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [stats, setStats] = useState<DailyStats | null>(null);
-  const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
   const [waPatient, setWaPatient] = useState<{name: string; mobile: string} | null>(null);
   const [showSummary, setShowSummary] = useState(false);
   const [showMonthly, setShowMonthly] = useState(false);
@@ -78,8 +58,6 @@ export default function DailyRegister() {
   }, [selectedDate]);
 
   useEffect(() => { refresh(); }, [refresh]);
-
-  const editForm = useForm<z.infer<typeof editSchema>>({ resolver: zodResolver(editSchema), values: editingPatient ? editingPatient as z.infer<typeof editSchema> : undefined });
 
   const filteredPatients = (stats?.patients || []).filter(p => {
     if (filterType === "all") return true;
@@ -158,13 +136,6 @@ export default function DailyRegister() {
       refresh();
     } catch { toast({ variant: "destructive", title: "Import Failed", description: "Could not read the Excel file." }); }
     if (excelImportRef.current) excelImportRef.current.value = "";
-  };
-
-  const onEditSubmit = (data: any) => {
-    if (!editingPatient) return;
-    updatePatient(editingPatient.id, { ...data, fees: Number(data.fees || 0) });
-    toast({ title: "Updated", description: "Patient record updated." });
-    setEditingPatient(null); refresh();
   };
 
   const handleDelete = (id: number) => {
@@ -345,7 +316,7 @@ Thank you everyone for your trust 🙏
                             className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
                             <Printer className="w-4 h-4" />
                           </button>
-                          <button onClick={() => setEditingPatient(p)}
+                          <button onClick={() => navigate("/?edit=" + p.id)}
                             className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
                             <Edit2 className="w-4 h-4" />
                           </button>
@@ -592,71 +563,6 @@ Thank you everyone for your trust 🙏
         </div>
       )}
 
-      {/* ── EDIT DIALOG ── */}
-      <Dialog open={!!editingPatient} onOpenChange={open => !open && setEditingPatient(null)}>
-        <DialogContent className="max-w-md bg-white rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">Edit Patient Visit</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 mt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Name</label>
-                <input {...editForm.register("name")} className="w-full px-3 py-2 rounded-xl border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Mobile / Case No.</label>
-                <input {...editForm.register("mobile")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none font-mono" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Age (yrs / mo)</label>
-                <div className="flex gap-1">
-                  <input type="number" {...editForm.register("age")} className="w-full px-2 py-2 rounded-xl border focus:border-primary outline-none" placeholder="yrs" />
-                  <input type="number" {...editForm.register("ageMonths")} className="w-16 px-2 py-2 rounded-xl border focus:border-primary outline-none" placeholder="mo" min={0} max={11} />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block">Weight</label>
-                <input {...editForm.register("weight")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" placeholder="e.g. 65 kg" />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Address</label>
-              <input {...editForm.register("address")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Complaint Code</label>
-              <input {...editForm.register("complaintCode")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none uppercase" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Complaint</label>
-              <input {...editForm.register("complaint")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Treatment</label>
-              <textarea {...editForm.register("treatment")} rows={2} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none resize-none" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Advice (use F5 for follow-up after 5 days)</label>
-              <input {...editForm.register("advice")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Reports</label>
-              <input {...editForm.register("reports")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 mb-1 block">Fees (₹)</label>
-              <input type="number" {...editForm.register("fees")} className="w-full px-3 py-2 rounded-xl border focus:border-primary outline-none" />
-            </div>
-            <div className="flex justify-end gap-3 pt-4">
-              <button type="button" onClick={() => setEditingPatient(null)} className="px-4 py-2 rounded-xl font-medium bg-slate-100 hover:bg-slate-200 text-slate-700">Cancel</button>
-              <button type="submit" className="px-4 py-2 rounded-xl font-medium bg-primary text-white shadow-md hover:bg-primary/90">Save Changes</button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </Layout>
     {waPatient && (
       <WhatsAppModal
