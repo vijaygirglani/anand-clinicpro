@@ -337,16 +337,8 @@ export default function Home() {
     return () => window.removeEventListener('scroll', close, true);
   }, []);
 
-  // ── Edit mode: pre-fill form from /?edit=PATIENTID ──────────────────────────
-  useEffect(() => {
-    const pidStr = new URLSearchParams(window.location.search).get("edit");
-    if (!pidStr) return;
-    const pid = Number(pidStr);
-    if (!pid) return;
-
-    const patient = getPatients().find(p => p.id === pid);
-    if (!patient) return;
-
+  // ── Pre-fill form from a Patient record (history click OR ?edit= URL param) ──
+  const prefillFromPatient = useCallback((patient: Patient) => {
     isPrefillingRef.current = true;
     form.reset({
       name:          patient.name,
@@ -365,7 +357,7 @@ export default function Home() {
     });
 
     const bill = getPatientBills().find(
-      b => b.patientId === pid && b.billDate === patient.visitDate
+      b => b.patientId === patient.id && b.billDate === patient.visitDate
     );
     if (bill) {
       setMedRowsSync(bill.items.map(i => ({
@@ -378,9 +370,24 @@ export default function Home() {
       })));
       setOtherCharges(bill.otherCharges ?? 0);
       setEditBillId(bill.id);
+    } else {
+      setMedRowsSync([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+      setOtherCharges(0);
+      setEditBillId(null);
     }
-    setEditPatientId(pid);
+    setEditPatientId(patient.id);
     setShowNameDropdown(false);
+  }, [form]);
+
+  // ── Edit mode: pre-fill form from /?edit=PATIENTID ──────────────────────────
+  useEffect(() => {
+    const pidStr = new URLSearchParams(window.location.search).get("edit");
+    if (!pidStr) return;
+    const pid = Number(pidStr);
+    if (!pid) return;
+    const patient = getPatients().find(p => p.id === pid);
+    if (!patient) return;
+    prefillFromPatient(patient);
   }, []);
 
   // ── Pathya-Apathya suggest state ──
@@ -1530,7 +1537,9 @@ export default function Home() {
                       </div>
                       <div className="flex-1 overflow-y-auto p-4 space-y-3">
                         {patientHistory.map((visit, i) => (
-                          <div key={i} className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                          <div key={i}
+                            className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer"
+                            onClick={() => { prefillFromPatient(visit); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
                             <div className="flex justify-between items-center mb-2">
                               <span className="text-xs font-bold px-2 py-1 bg-white rounded-md border border-slate-200 text-slate-600">
                                 {format(new Date(visit.visitDate), "dd MMM yyyy")}
@@ -1542,6 +1551,7 @@ export default function Home() {
                                 {visit.fees > 0 && (
                                   <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-md">₹{visit.fees}</span>
                                 )}
+                                <span className="text-[10px] text-slate-400 font-medium">tap to edit</span>
                               </div>
                             </div>
                             <div className="space-y-1">
@@ -1550,7 +1560,7 @@ export default function Home() {
                               {visit.advice && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Advice: </span>{visit.advice}</p>}
                             </div>
                             <div className="mt-2 flex justify-end">
-                              <button type="button" onClick={() => printPatientPrescription(visit)}
+                              <button type="button" onClick={e => { e.stopPropagation(); printPatientPrescription(visit); }}
                                 className="flex items-center gap-1 text-xs text-slate-400 hover:text-primary transition-colors">
                                 <Printer className="w-3 h-3" /> Print
                               </button>
