@@ -338,11 +338,7 @@ export default function Home() {
 
   // ── Edit mode: pre-fill form from /?edit=PATIENTID ──────────────────────────
   useEffect(() => {
-    const hash = window.location.hash;
-    const qIdx = hash.indexOf("?");
-    if (qIdx === -1) return;
-    const params = new URLSearchParams(hash.slice(qIdx));
-    const pidStr = params.get("edit");
+    const pidStr = new URLSearchParams(window.location.search).get("edit");
     if (!pidStr) return;
     const pid = Number(pidStr);
     if (!pid) return;
