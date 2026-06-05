@@ -98,7 +98,11 @@ export default function DailyRegister() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `Manglam_Clinic_Backup_${format(new Date(), "yyyy-MM-dd")}.json`;
-    a.click(); URL.revokeObjectURL(url);
+    // Append to DOM before clicking — prevents Electron focus loss on detached element
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     toast({ title: "Backup Created", description: "All patient data backed up." });
   };
 

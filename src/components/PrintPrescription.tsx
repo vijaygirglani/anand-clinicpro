@@ -143,4 +143,6 @@ export function printPatientPrescription(patient: Patient) {
   el.style.display = "block";
   window.print();
   el.style.display = "none";
+  // Restore focus after native print dialog — Windows doesn't auto-return focus to Electron
+  window.focus();
 }

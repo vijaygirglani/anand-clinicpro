@@ -93,7 +93,10 @@ export default function DailyReport() {
   });
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(whatsAppText);
+    navigator.clipboard.writeText(whatsAppText).finally(() => {
+      // Restore focus to the window after clipboard API releases it (Electron focus fix)
+      window.focus();
+    });
     toast({ title: "Copied! Paste in WhatsApp" });
   };
 
@@ -104,7 +107,10 @@ export default function DailyReport() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `clinicpro-backup-${format(new Date(), "yyyy-MM-dd")}.json`;
+    // Append to DOM before clicking — prevents Electron focus loss on detached element
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast({ title: "Backup downloaded" });
   };
