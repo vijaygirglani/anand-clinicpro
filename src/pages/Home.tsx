@@ -647,8 +647,8 @@ export default function Home() {
       }
     }
 
-    // Auto-fill fees from bill amount if medicines added
-    const finalFees = validMedRows.length > 0 ? billAmount : (Number(data.fees || 0) + (otherCharges ?? 0));
+    // Consultation fee only — otherCharges lives exclusively in bill.otherCharges
+    const finalFees = Number(data.fees || 0);
 
     let saved: Patient;
     if (editPatientId) {
@@ -714,9 +714,9 @@ export default function Home() {
         billDate: visitDate,
         items,                              // [] when no medicines
         otherCharges: otherCharges ?? 0,
-        totalSale:   medSale   + (otherCharges ?? 0),
+        totalSale:   medSale,               // pure medicine sale; otherCharges tracked separately
         totalCost:   medCost,               // 0 when no medicines
-        totalProfit: medProfit + (otherCharges ?? 0),
+        totalProfit: medProfit,             // pure medicine margin; otherCharges tracked separately
         createdAt: new Date().toISOString(),
       };
       savePatientBill(patientBill);

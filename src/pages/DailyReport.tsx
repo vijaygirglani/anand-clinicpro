@@ -31,41 +31,60 @@ export default function DailyReport() {
     doctor2Name: settings.doctor2Name,
   });
 
-  // Override med stats with inventory data
+  // Migration helpers: always recompute from items (ignores stored totalSale/totalProfit
+  // which, in old bills, had otherCharges baked in). otherCharges lives only in bill.otherCharges.
+  const itemSale   = (b: ReturnType<typeof getPatientBillsByDate>[number]) =>
+    b.items.reduce((s, i) => s + i.salePrice, 0);
+  const itemCost   = (b: ReturnType<typeof getPatientBillsByDate>[number]) =>
+    b.items.reduce((s, i) => s + i.cost, 0);
+
   const d1Bills = patientBills.filter(b => b.doctorId === 1);
   const d2Bills = patientBills.filter(b => b.doctorId === 2);
 
-  const d1OtherCharges = d1Bills.reduce((s, b) => s + (b.otherCharges ?? 0), 0);
-  const d2OtherCharges = d2Bills.reduce((s, b) => s + (b.otherCharges ?? 0), 0);
+  const d1MedSale    = d1Bills.reduce((s, b) => s + itemSale(b), 0);
+  const d1MedCost    = d1Bills.reduce((s, b) => s + itemCost(b), 0);
+  const d1OtherTotal = d1Bills.reduce((s, b) => s + (b.otherCharges ?? 0), 0);
 
-  // totalProfit in PatientBill = medMargin + otherCharges (baked at save time)
-  // Strip otherCharges here so medicineProfit shows pure margin only
-  const d1MedProfit = d1Bills.reduce((s, b) => s + b.totalProfit - (b.otherCharges ?? 0), 0);
-  const d2MedProfit = d2Bills.reduce((s, b) => s + b.totalProfit - (b.otherCharges ?? 0), 0);
+  const d2MedSale    = d2Bills.reduce((s, b) => s + itemSale(b), 0);
+  const d2MedCost    = d2Bills.reduce((s, b) => s + itemCost(b), 0);
+  const d2OtherTotal = d2Bills.reduce((s, b) => s + (b.otherCharges ?? 0), 0);
+
+  // NOTE: storeReport.doctorN.consultationFees = sum(patient.fees).
+  // For records saved before this fix, patient.fees had medSale+otherCharges baked in —
+  // those old records will still over-report here. New records are correct.
+  const d1ConsultFees = storeReport.doctor1.consultationFees + d1MedSale + d1OtherTotal;
+  const d2ConsultFees = storeReport.doctor2.consultationFees + d2MedSale + d2OtherTotal;
+
+  const d1MedProfit = d1MedSale + d1OtherTotal - d1MedCost;
+  const d2MedProfit = d2MedSale + d2OtherTotal - d2MedCost;
+
+  const allMedSale    = patientBills.reduce((s, b) => s + itemSale(b), 0);
+  const allMedCost    = patientBills.reduce((s, b) => s + itemCost(b), 0);
+  const allOtherTotal = patientBills.reduce((s, b) => s + (b.otherCharges ?? 0), 0);
 
   const report = {
     ...storeReport,
     doctor1: {
       ...storeReport.doctor1,
-      consultationFees: storeReport.doctor1.consultationFees + d1OtherCharges,
-      medicineSales: d1Bills.reduce((s, b) => s + b.totalSale, 0),
-      medicineCost: d1Bills.reduce((s, b) => s + b.totalCost, 0),
+      consultationFees: d1ConsultFees,
+      medicineSales: d1MedSale,
+      medicineCost: d1MedCost,
       medicineProfit: d1MedProfit,
-      total: storeReport.doctor1.consultationFees + d1OtherCharges + d1MedProfit,
+      total: d1ConsultFees + d1MedProfit,
     },
     doctor2: {
       ...storeReport.doctor2,
-      consultationFees: storeReport.doctor2.consultationFees + d2OtherCharges,
-      medicineSales: d2Bills.reduce((s, b) => s + b.totalSale, 0),
-      medicineCost: d2Bills.reduce((s, b) => s + b.totalCost, 0),
+      consultationFees: d2ConsultFees,
+      medicineSales: d2MedSale,
+      medicineCost: d2MedCost,
       medicineProfit: d2MedProfit,
-      total: storeReport.doctor2.consultationFees + d2OtherCharges + d2MedProfit,
+      total: d2ConsultFees + d2MedProfit,
     },
-    totalConsultation: storeReport.doctor1.consultationFees + d1OtherCharges + storeReport.doctor2.consultationFees + d2OtherCharges,
-    totalMedicineSales: patientBills.reduce((s, b) => s + b.totalSale, 0),
-    totalMedicineProfit: patientBills.reduce((s, b) => s + b.totalProfit - (b.otherCharges ?? 0), 0),
-    grandTotal: storeReport.doctor1.consultationFees + d1OtherCharges + d1MedProfit +
-                storeReport.doctor2.consultationFees + d2OtherCharges + d2MedProfit,
+    // Total Collection = all money received (consult + med sale + other charges)
+    totalConsultation: storeReport.totalConsultation + allMedSale + allOtherTotal,
+    totalMedicineSales: allMedSale,
+    totalMedicineProfit: allMedSale + allOtherTotal - allMedCost,
+    grandTotal: storeReport.totalConsultation + allMedSale + allOtherTotal,
   };
 
   const whatsAppText = generateWhatsAppReport(date, settings.clinicName, {

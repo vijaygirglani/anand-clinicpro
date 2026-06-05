@@ -24,7 +24,7 @@ import { exportToExcel, parseExcelFile } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
-import { deletePatientBill } from "@/lib/inventory";
+import { deletePatientBill, getPatientBillsByDate } from "@/lib/inventory";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -64,6 +64,13 @@ export default function DailyRegister() {
     if (filterType === "general") return p.registerType !== "ayurvedic";
     return p.registerType === "ayurvedic";
   });
+
+  // Bill lookup: patientId → bill (for otherCharges display)
+  const billsByPatientId = Object.fromEntries(
+    getPatientBillsByDate(selectedDate).map(b => [b.patientId, b])
+  );
+  const dailyOtherChargesTotal = Object.values(billsByPatientId)
+    .reduce((s, b) => s + (b.otherCharges ?? 0), 0);
 
   const monthlyStats = showMonthly ? getMonthlyStats(monthlyYear, monthlyMonth) : null;
 
@@ -240,7 +247,7 @@ Thank you everyone for your trust 🙏
             { label: "Total", value: stats?.totalPatients || 0, icon: Users, color: "bg-blue-100 text-primary" },
             { label: "General", value: (stats?.patients || []).filter(p => p.registerType !== "ayurvedic").length, icon: FileText, color: "bg-slate-100 text-slate-600" },
             { label: "Ayurvedic", value: (stats?.patients || []).filter(p => p.registerType === "ayurvedic").length, icon: Leaf, color: "bg-emerald-100 text-emerald-600" },
-            { label: "Collection", value: formatCurrency((stats?.totalFees || 0) + looseDayTotal), icon: IndianRupee, color: "bg-emerald-100 text-emerald-600", sub: looseDayTotal > 0 ? `+₹${looseDayTotal} loose` : undefined },
+            { label: "Collection", value: formatCurrency((stats?.totalFees || 0) + dailyOtherChargesTotal + looseDayTotal), icon: IndianRupee, color: "bg-emerald-100 text-emerald-600", sub: looseDayTotal > 0 ? `+₹${looseDayTotal} loose` : undefined },
           ].map(({ label, value, icon: Icon, color, sub }: any) => (
             <div key={label} className="medical-card p-4 flex items-center gap-3">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
@@ -309,7 +316,12 @@ Thank you everyone for your trust 🙏
                           ? <span className="text-xs font-bold px-2 py-1 rounded-md bg-emerald-100 text-emerald-700">Ayurvedic</span>
                           : <span className="text-xs font-bold px-2 py-1 rounded-md bg-blue-100 text-blue-700">General</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">{p.fees ? `₹${p.fees}` : "-"}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">{
+                        (() => {
+                          const total = (p.fees || 0) + (billsByPatientId[p.id]?.otherCharges ?? 0);
+                          return total ? `₹${total}` : "-";
+                        })()
+                      }</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => { setPrintPatient(p); setTimeout(() => printPatientPrescription(p), 50); }}
