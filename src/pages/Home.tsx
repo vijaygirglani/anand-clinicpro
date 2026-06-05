@@ -246,6 +246,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [nameSuggestions, setNameSuggestions] = useState<PatientSuggestion[]>([]);
   const [showNameDropdown, setShowNameDropdown] = useState(false);
+  const isPrefillingRef = useRef(false); // suppress dropdown during programmatic pre-fill
   const [pendingFees, setPendingFees] = useState<PendingEntry[]>(() => getPendingFees());
   const [feesMarkedPending, setFeesMarkedPending] = useState(false);
   const [pendingAmount, setPendingAmount] = useState<string>("");
@@ -346,6 +347,7 @@ export default function Home() {
     const patient = getPatients().find(p => p.id === pid);
     if (!patient) return;
 
+    isPrefillingRef.current = true;
     form.reset({
       name:          patient.name,
       mobile:        patient.mobile,
@@ -378,6 +380,7 @@ export default function Home() {
       setEditBillId(bill.id);
     }
     setEditPatientId(pid);
+    setShowNameDropdown(false);
   }, []);
 
   // ── Pathya-Apathya suggest state ──
@@ -413,6 +416,10 @@ export default function Home() {
 
   // Live dropdown: watch name field, search on every keystroke
   useEffect(() => {
+    if (isPrefillingRef.current) {
+      isPrefillingRef.current = false; // consume the flag; subsequent keystrokes work normally
+      return;
+    }
     if (nameValue && nameValue.length >= 2) {
       const results = searchPatientSuggestions(nameValue);
       setNameSuggestions(results);
