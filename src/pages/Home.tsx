@@ -337,6 +337,53 @@ export default function Home() {
     return () => window.removeEventListener('scroll', close, true);
   }, []);
 
+  // ── Pathya-Apathya suggest state ──
+  const [importedDiseases, setImportedDiseases] = useState<PADisease[]>(() => getAllDiseases());
+  const [paMatches, setPaMatches]               = useState<ReturnType<typeof matchDiseasesToComplaint>>([]);
+  const [selectedPADisease, setSelectedPADisease] = useState<PADisease | null>(null);
+  const [showPAPanel, setShowPAPanel]           = useState(false);
+  const [paSent, setPaSent]                     = useState(false);
+  const [paLang, setPaLang]                     = useState<"en" | "hi" | "gu">("gu");
+
+  // ── Google Sheet state ──
+  const [sheetUrl, setSheetUrl] = useState<string>(() => localStorage.getItem(SHEET_KEY) || "");
+  const [showSheetModal, setShowSheetModal] = useState(false);
+  const [sheetInput, setSheetInput] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [sheetRows, setSheetRows] = useState<SheetRow[]>([]);
+  const [showSheetPicker, setShowSheetPicker] = useState(false);
+  const sheetConnected = !!sheetUrl;
+
+  // Separate refs so search always reads live DOM value
+  const mobileRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  const form = useForm<PatientFormValues>({
+    resolver: zodResolver(patientSchema),
+    defaultValues: emptyDefaults,
+  });
+
+  const complaintCodeValue = form.watch("complaintCode");
+  const visitDateValue = form.watch("visitDate");
+  const nameValue = form.watch("name");
+  const complaintValue = form.watch("complaint");
+
+  // Live dropdown: watch name field, search on every keystroke
+  useEffect(() => {
+    if (isPrefillingRef.current) {
+      isPrefillingRef.current = false; // consume the flag; subsequent keystrokes work normally
+      return;
+    }
+    if (nameValue && nameValue.length >= 2) {
+      const results = searchPatientSuggestions(nameValue);
+      setNameSuggestions(results);
+      setShowNameDropdown(results.length > 0);
+    } else {
+      setNameSuggestions([]);
+      setShowNameDropdown(false);
+    }
+  }, [nameValue]);
+
   // ── Pre-fill form from a Patient record (history click OR ?edit= URL param) ──
   const prefillFromPatient = useCallback((patient: Patient) => {
     isPrefillingRef.current = true;
@@ -388,54 +435,7 @@ export default function Home() {
     const patient = getPatients().find(p => p.id === pid);
     if (!patient) return;
     prefillFromPatient(patient);
-  }, []);
-
-  // ── Pathya-Apathya suggest state ──
-  const [importedDiseases, setImportedDiseases] = useState<PADisease[]>(() => getAllDiseases());
-  const [paMatches, setPaMatches]               = useState<ReturnType<typeof matchDiseasesToComplaint>>([]);
-  const [selectedPADisease, setSelectedPADisease] = useState<PADisease | null>(null);
-  const [showPAPanel, setShowPAPanel]           = useState(false);
-  const [paSent, setPaSent]                     = useState(false);
-  const [paLang, setPaLang]                     = useState<"en" | "hi" | "gu">("gu");
-
-  // ── Google Sheet state ──
-  const [sheetUrl, setSheetUrl] = useState<string>(() => localStorage.getItem(SHEET_KEY) || "");
-  const [showSheetModal, setShowSheetModal] = useState(false);
-  const [sheetInput, setSheetInput] = useState("");
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [sheetRows, setSheetRows] = useState<SheetRow[]>([]);
-  const [showSheetPicker, setShowSheetPicker] = useState(false);
-  const sheetConnected = !!sheetUrl;
-
-  // Separate refs so search always reads live DOM value
-  const mobileRef = useRef<HTMLInputElement>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
-
-  const form = useForm<PatientFormValues>({
-    resolver: zodResolver(patientSchema),
-    defaultValues: emptyDefaults,
-  });
-
-  const complaintCodeValue = form.watch("complaintCode");
-  const visitDateValue = form.watch("visitDate");
-  const nameValue = form.watch("name");
-  const complaintValue = form.watch("complaint");
-
-  // Live dropdown: watch name field, search on every keystroke
-  useEffect(() => {
-    if (isPrefillingRef.current) {
-      isPrefillingRef.current = false; // consume the flag; subsequent keystrokes work normally
-      return;
-    }
-    if (nameValue && nameValue.length >= 2) {
-      const results = searchPatientSuggestions(nameValue);
-      setNameSuggestions(results);
-      setShowNameDropdown(results.length > 0);
-    } else {
-      setNameSuggestions([]);
-      setShowNameDropdown(false);
-    }
-  }, [nameValue]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (complaintCodeValue && complaintCodeValue.length >= 2) {
