@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Layout } from "@/components/Layout";
 import {
-  getPurchaseBills, savePurchaseBill, deletePurchaseBill, addPaymentToBill,
+  getPurchaseBills, savePurchaseBill, deletePurchaseBill, clearPurchaseBills, addPaymentToBill,
   getSupplierSummary, calcLandingCost, newId, formatExpiry,
   type PurchaseBill, type PurchaseBillItem,
 } from "@/lib/inventory";
@@ -83,16 +83,26 @@ export default function PurchaseBills() {
           const json = JSON.parse(ev.target?.result as string);
           const incoming: PurchaseBill[] = json.cp_purchase_bills;
           if (!Array.isArray(incoming)) throw new Error("Invalid format");
-          const existingBillNos = new Set(getPurchaseBills().map(b => b.billNo));
-          let count = 0;
-          for (const bill of incoming) {
-            if (!existingBillNos.has(bill.billNo)) {
-              savePurchaseBill(bill);
-              count++;
+
+          const replace = confirm("Replace all existing bills with imported data?\n\nYes — clear all existing bills, then import\nNo — merge (skip bills with duplicate bill numbers)");
+
+          if (replace) {
+            clearPurchaseBills();
+            for (const bill of incoming) savePurchaseBill(bill);
+            refresh();
+            toast({ title: `Replaced with ${incoming.length} imported bills` });
+          } else {
+            const existingBillNos = new Set(getPurchaseBills().map(b => b.billNo));
+            let count = 0;
+            for (const bill of incoming) {
+              if (!existingBillNos.has(bill.billNo)) {
+                savePurchaseBill(bill);
+                count++;
+              }
             }
+            refresh();
+            toast({ title: `Imported ${count} new bills successfully` });
           }
-          refresh();
-          toast({ title: `Imported ${count} new bills successfully` });
         } catch {
           toast({ title: "Import failed", description: "Invalid or unrecognized JSON file", variant: "destructive" });
         }

@@ -235,6 +235,10 @@ export function deletePurchaseBill(id: string): void {
   storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify(bills));
 }
 
+export function clearPurchaseBills(): void {
+  storage.setItem(PURCHASE_BILLS_KEY, JSON.stringify([]));
+}
+
 export function addPaymentToBill(billId: string, amount: number, date: string, note = ""): void {
   const bills = getPurchaseBills();
   const bill = bills.find(b => b.id === billId);
