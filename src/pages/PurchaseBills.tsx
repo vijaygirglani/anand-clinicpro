@@ -6,7 +6,7 @@ import {
   type PurchaseBill, type PurchaseBillItem,
 } from "@/lib/inventory";
 import { useToast } from "@/hooks/use-toast";
-import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X, Pencil, IndianRupee, BarChart3, Building2, CheckCircle, Clock, AlertCircle, Download, Upload } from "lucide-react";
+import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X, Pencil, IndianRupee, BarChart3, Building2, CheckCircle, Clock, AlertCircle, Download, Upload, Search } from "lucide-react";
 import { format } from "date-fns";
 
 interface RowDraft {
@@ -49,6 +49,7 @@ export default function PurchaseBills() {
   const [showPayment, setShowPayment] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [search, setSearch] = useState("");
 
   // Form state
   const [supplier, setSupplier] = useState("");
@@ -172,6 +173,10 @@ export default function PurchaseBills() {
   };
 
   const supplierSummary = useMemo(() => getSupplierSummary(), [bills]);
+  const filteredBills = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? bills.filter(b => b.supplierName.toLowerCase().includes(q)) : bills;
+  }, [bills, search]);
 
   return (
     <Layout>
@@ -311,12 +316,22 @@ export default function PurchaseBills() {
         {/* Bills List */}
         {tab === "bills" && (
           <div className="space-y-3">
-            {bills.length === 0 ? (
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by supplier name…"
+                className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[rgb(var(--primary))/50] bg-white"
+              />
+            </div>
+            {filteredBills.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-xl text-center py-16 text-slate-400">
                 <ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30"/>
-                <p className="font-medium">No purchase bills yet</p>
+                <p className="font-medium">{search.trim() ? "No bills match your search" : "No purchase bills yet"}</p>
               </div>
-            ) : bills.map(bill => (
+            ) : filteredBills.map(bill => (
               <div key={bill.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                 <div className="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-slate-50"
                   onClick={()=>setExpanded(expanded===bill.id?null:bill.id)}>
