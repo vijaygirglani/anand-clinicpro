@@ -282,6 +282,7 @@ export default function Home() {
 
   const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number; bestBatch: any}[]>([]);
   const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
+  const [highlightedSugIdx, setHighlightedSugIdx] = useState<number | null>(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -330,9 +331,15 @@ export default function Home() {
   const removeMedRow = (i: number) => setMedRowsSync(p => p.filter((_, idx) => idx !== i));
   const refreshPending = () => setPendingFees(getPendingFees());
 
-  // Close dropdowns on scroll
+  // Close dropdowns on scroll (but not when scrolling inside the dropdown itself)
   useEffect(() => {
-    const close = () => { setMedSuggestions([]); setActiveMedIdx(null); };
+    const close = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('[id^="med-dropdown-"]')) return;
+      setMedSuggestions([]);
+      setActiveMedIdx(null);
+      setHighlightedSugIdx(null);
+    };
     window.addEventListener('scroll', close, true);
     return () => window.removeEventListener('scroll', close, true);
   }, []);
@@ -1267,6 +1274,7 @@ export default function Home() {
                                       updateMedRow(i, "medicineName", e.target.value);
                                       updateMedRow(i, "mrp", 0);
                                       setActiveMedIdx(i);
+                                      setHighlightedSugIdx(null);
                                       setMedSuggestions(getMedSuggestions(e.target.value));
                                       const rect = e.currentTarget.getBoundingClientRect();
                                       setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
@@ -1275,14 +1283,23 @@ export default function Home() {
                                       const rect = e.currentTarget.getBoundingClientRect();
                                       setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
                                       setActiveMedIdx(i);
+                                      setHighlightedSugIdx(null);
                                       setMedSuggestions(getMedSuggestions(r.medicineName));
                                     }}
-                                    onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); }, 150)}
+                                    onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }, 150)}
                                     onKeyDown={(e) => {
-                                      if (e.key === "Escape") { setMedSuggestions([]); setActiveMedIdx(null); }
+                                      if (e.key === "Escape") { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }
+                                      if (e.key === "ArrowDown" && medSuggestions.length > 0) {
+                                        e.preventDefault();
+                                        setHighlightedSugIdx(prev => prev === null ? 0 : Math.min(prev + 1, medSuggestions.length - 1));
+                                      }
+                                      if (e.key === "ArrowUp" && medSuggestions.length > 0) {
+                                        e.preventDefault();
+                                        setHighlightedSugIdx(prev => prev === null ? medSuggestions.length - 1 : Math.max(prev - 1, 0));
+                                      }
                                       if (e.key === "Enter" && medSuggestions.length > 0) {
                                         e.preventDefault();
-                                        const s = medSuggestions[0];
+                                        const s = medSuggestions[highlightedSugIdx ?? 0];
                                         setMedRowsSync(p => p.map((r, idx) => idx === i ? {
                                           ...r, medicineName: s.name, mrp: s.mrpPerTablet,
                                           batchNo: s.bestBatch?.batchNo || "",
@@ -1297,6 +1314,7 @@ export default function Home() {
                                         } : r);
                                         setMedSuggestions([]);
                                         setActiveMedIdx(null);
+                                        setHighlightedSugIdx(null);
                                       }
                                     }}
                                     placeholder="Type medicine name..."
@@ -1307,6 +1325,8 @@ export default function Home() {
                                       id={`med-dropdown-${i}`}>
                                       {medSuggestions.map((s, si) => (
                                         <button key={si} type="button"
+                                          ref={el => { if (el && si === highlightedSugIdx) el.scrollIntoView({ block: "nearest" }); }}
+                                          onMouseEnter={() => setHighlightedSugIdx(si)}
                                           onMouseDown={(e) => {
                                             e.preventDefault();
                                             setMedRowsSync(p => p.map((r, idx) => idx === i ? {
@@ -1327,8 +1347,9 @@ export default function Home() {
                                             } : r);
                                             setMedSuggestions([]);
                                             setActiveMedIdx(null);
+                                            setHighlightedSugIdx(null);
                                           }}
-                                          className={`w-full text-left px-3 py-2.5 text-xs flex items-center justify-between gap-2 border-b border-slate-50 last:border-0 hover:bg-blue-50 ${si === 0 ? "rounded-t-lg" : ""}`}>
+                                          className={`w-full text-left px-3 py-2.5 text-xs flex items-center justify-between gap-2 border-b border-slate-50 last:border-0 ${si === highlightedSugIdx ? "bg-blue-50" : "hover:bg-blue-50"} ${si === 0 ? "rounded-t-lg" : ""}`}>
                                           <span className="font-semibold text-slate-800">{s.name}</span>
                                           <span className="text-slate-500 shrink-0 text-right">
                                             <span className="text-primary font-medium">₹{s.mrpPerTablet.toFixed(2)}/tab</span>
