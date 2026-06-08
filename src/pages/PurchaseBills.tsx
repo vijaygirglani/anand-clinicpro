@@ -6,7 +6,7 @@ import {
   type PurchaseBill, type PurchaseBillItem,
 } from "@/lib/inventory";
 import { useToast } from "@/hooks/use-toast";
-import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X, Pencil, IndianRupee, BarChart3, Building2, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { ShoppingCart, Plus, Trash2, ChevronDown, ChevronUp, Save, X, Pencil, IndianRupee, BarChart3, Building2, CheckCircle, Clock, AlertCircle, Download, Upload } from "lucide-react";
 import { format } from "date-fns";
 
 interface RowDraft {
@@ -57,6 +57,49 @@ export default function PurchaseBills() {
   const [rows, setRows] = useState<RowDraft[]>([emptyRow()]);
 
   const refresh = () => setBills(getPurchaseBills().sort((a, b) => b.billDate.localeCompare(a.billDate)));
+
+  const handleExport = () => {
+    const data = JSON.stringify({ cp_purchase_bills: getPurchaseBills() }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "clinicpro-inventory-backup.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const json = JSON.parse(ev.target?.result as string);
+          const incoming: PurchaseBill[] = json.cp_purchase_bills;
+          if (!Array.isArray(incoming)) throw new Error("Invalid format");
+          const existingBillNos = new Set(getPurchaseBills().map(b => b.billNo));
+          let count = 0;
+          for (const bill of incoming) {
+            if (!existingBillNos.has(bill.billNo)) {
+              savePurchaseBill(bill);
+              count++;
+            }
+          }
+          refresh();
+          toast({ title: `Imported ${count} new bills successfully` });
+        } catch {
+          toast({ title: "Import failed", description: "Invalid or unrecognized JSON file", variant: "destructive" });
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
 
   const calc = (r: RowDraft) => r.ratePerPack > 0 ? calcLandingCost({
     qtyPacksPaid: r.qtyPacksPaid, qtyPacksFree: r.qtyPacksFree,
@@ -144,12 +187,22 @@ export default function PurchaseBills() {
               <p className="text-sm text-slate-500">{bills.length} bills · ₹{bills.reduce((s,b)=>s+(b.amountPending||0),0).toLocaleString("en-IN")} pending</p>
             </div>
           </div>
-          <button onClick={() => { setShowForm(s => !s); if (showForm) { setEditId(null); setRows([emptyRow()]); } }}
-            className="flex items-center gap-2 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={{ background: `rgb(var(--primary))` }}>
-            {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {showForm ? "Cancel" : "New Bill"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleExport}
+              className="flex items-center gap-2 border border-slate-300 bg-white text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+              <Download className="w-4 h-4" />Export Inventory
+            </button>
+            <button onClick={handleImport}
+              className="flex items-center gap-2 border border-slate-300 bg-white text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+              <Upload className="w-4 h-4" />Import Inventory
+            </button>
+            <button onClick={() => { setShowForm(s => !s); if (showForm) { setEditId(null); setRows([emptyRow()]); } }}
+              className="flex items-center gap-2 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{ background: `rgb(var(--primary))` }}>
+              {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {showForm ? "Cancel" : "New Bill"}
+            </button>
+          </div>
         </div>
 
         {/* New/Edit Bill Form */}
