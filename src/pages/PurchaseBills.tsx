@@ -192,7 +192,10 @@ export default function PurchaseBills() {
   const supplierSummary = useMemo(() => getSupplierSummary(), [bills]);
   const filteredBills = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? bills.filter(b => b.supplierName.toLowerCase().includes(q)) : bills;
+    return q ? bills.filter(b =>
+      b.supplierName.toLowerCase().includes(q) ||
+      b.items.some(i => i.medicineName.toLowerCase().includes(q))
+    ) : bills;
   }, [bills, search]);
 
   return (
@@ -343,7 +346,7 @@ export default function PurchaseBills() {
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search by supplier name…"
+                placeholder="Search by supplier or medicine name…"
                 className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[rgb(var(--primary))/50] bg-white"
               />
             </div>
