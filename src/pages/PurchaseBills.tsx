@@ -112,6 +112,13 @@ export default function PurchaseBills() {
     input.click();
   };
 
+  const handleClearAll = () => {
+    if (!confirm(`Delete all ${bills.length} purchase bills? This cannot be undone.`)) return;
+    clearPurchaseBills();
+    refresh();
+    toast({ title: "All purchase bills cleared" });
+  };
+
   const calc = (r: RowDraft) => r.ratePerPack > 0 ? calcLandingCost({
     qtyPacksPaid: r.qtyPacksPaid, qtyPacksFree: r.qtyPacksFree,
     ratePerPack: r.ratePerPack, discountPct: r.discountPct,
@@ -210,6 +217,10 @@ export default function PurchaseBills() {
             <button onClick={handleImport}
               className="flex items-center gap-2 border border-slate-300 bg-white text-slate-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
               <Upload className="w-4 h-4" />Import Inventory
+            </button>
+            <button onClick={handleClearAll}
+              className="flex items-center gap-2 border border-red-200 bg-white text-red-600 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors">
+              <Trash2 className="w-4 h-4" />Clear All Bills
             </button>
             <button onClick={() => { setShowForm(s => !s); if (showForm) { setEditId(null); setRows([emptyRow()]); } }}
               className="flex items-center gap-2 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
