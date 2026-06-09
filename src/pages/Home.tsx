@@ -480,7 +480,7 @@ export default function Home() {
             const match = results.find(r => r.name.toLowerCase() === m.medicineName.toLowerCase());
             return {
               medicineName: m.medicineName,
-              qty: 0,
+              qty: m.defaultQty ?? 0,
               mrp: match?.bestBatch ? +match.bestBatch.mrpPerTablet.toFixed(2) : 0,
               batchNo: match?.bestBatch?.batchNo || "",
               billId: match?.bestBatch?.billId || "",
