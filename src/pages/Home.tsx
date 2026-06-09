@@ -968,7 +968,9 @@ export default function Home() {
                     <label className="text-sm font-semibold text-slate-700">Age <span className="text-slate-400 text-xs">(optional)</span></label>
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
-                        <input type="number" {...form.register("age")} min={0}
+                        <input type="number" {...ageRest} min={0}
+                          ref={el => { ageRHFRef(el); ageRef.current = el; }}
+                          onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); weightRef.current?.focus(); } }}
                           className="w-full px-3 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="0" />
                         <span className="absolute right-2 top-3.5 text-xs text-slate-400">yrs</span>
                       </div>
