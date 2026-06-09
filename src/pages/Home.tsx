@@ -287,6 +287,14 @@ export default function Home() {
   const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const medQtyRefs = useRef<(HTMLInputElement | null)[]>([]);
   const otherChargesRef = useRef<HTMLInputElement | null>(null);
+  const ageRef = useRef<HTMLInputElement | null>(null);
+  const weightRef = useRef<HTMLInputElement | null>(null);
+  const addressRef = useRef<HTMLInputElement | null>(null);
+  const complaintCodeRef = useRef<HTMLInputElement | null>(null);
+  const complaintRef = useRef<HTMLTextAreaElement | null>(null);
+  const adviceRef = useRef<HTMLTextAreaElement | null>(null);
+  const reportsRef = useRef<HTMLTextAreaElement | null>(null);
+  const submitBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
 
@@ -769,6 +777,7 @@ export default function Home() {
     setSelectedPADisease(null);
     setPaMatches([]);
     setShowPAPanel(false);
+    setTimeout(() => mobileRef.current?.focus(), 50);
   };
 
   const onSubmit = (data: PatientFormValues) => savePatient(data, "general");
@@ -777,6 +786,13 @@ export default function Home() {
   // Register mobile/name with RHF but also attach our DOM ref
   const { ref: mobileRHFRef, ...mobileRest } = form.register("mobile");
   const { ref: nameRHFRef, ...nameRest } = form.register("name");
+  const { ref: ageRHFRef, ...ageRest } = form.register("age");
+  const { ref: weightRHFRef, ...weightRest } = form.register("weight");
+  const { ref: addressRHFRef, ...addressRest } = form.register("address");
+  const { ref: complaintCodeRHFRef, ...complaintCodeRest } = form.register("complaintCode");
+  const { ref: complaintRHFRef, ...complaintRest } = form.register("complaint");
+  const { ref: adviceRHFRef, ...adviceRest } = form.register("advice");
+  const { ref: reportsRHFRef, ...reportsRest } = form.register("reports");
 
   return (
     <Layout>
@@ -845,7 +861,8 @@ export default function Home() {
                             (mobileRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
                           }}
                           onKeyDown={e => {
-                            if (e.key === "Enter") { e.preventDefault(); runMobileLookup(); }
+                            if (e.key === "Enter") { e.preventDefault(); runMobileLookup(); nameRef.current?.focus(); }
+                            if (e.key === "Tab") { e.preventDefault(); nameRef.current?.focus(); }
                           }}
                           className="w-full pl-4 pr-10 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800 font-mono"
                           placeholder="Mobile or Case No."
