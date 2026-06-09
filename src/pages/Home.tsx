@@ -440,7 +440,7 @@ export default function Home() {
       setMedRowsSync(bill.items.map(i => ({
         medicineName:         i.medicineName,
         qty:                  i.qtyTablets,
-        mrp:                  i.mrpPerTablet,
+        mrp:                  +i.mrpPerTablet.toFixed(2),
         batchNo:              i.batchNo,
         billId:               i.billId,
         landingCostPerTablet: i.landingCostPerTablet,
@@ -480,8 +480,8 @@ export default function Home() {
             const match = results.find(r => r.name.toLowerCase() === m.medicineName.toLowerCase());
             return {
               medicineName: m.medicineName,
-              qty: m.defaultQty,
-              mrp: match?.bestBatch?.mrpPerTablet || 0,
+              qty: 0,
+              mrp: match?.bestBatch ? +match.bestBatch.mrpPerTablet.toFixed(2) : 0,
               batchNo: match?.bestBatch?.batchNo || "",
               billId: match?.bestBatch?.billId || "",
               landingCostPerTablet: match?.bestBatch?.landingCostPerTablet || 0,
@@ -1377,13 +1377,13 @@ export default function Home() {
                                         e.preventDefault();
                                         const s = medSuggestions[highlightedSugIdx ?? 0];
                                         setMedRowsSync(p => p.map((r, idx) => idx === i ? {
-                                          ...r, medicineName: s.name, mrp: s.mrpPerTablet,
+                                          ...r, medicineName: s.name, qty: 0, mrp: +s.mrpPerTablet.toFixed(2),
                                           batchNo: s.bestBatch?.batchNo || "",
                                           billId: s.bestBatch?.billId || "",
                                           landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
                                         } : r));
                                         medRowsRef.current = medRowsRef.current.map((r, idx) => idx === i ? {
-                                          ...r, medicineName: s.name, mrp: s.mrpPerTablet,
+                                          ...r, medicineName: s.name, qty: 0, mrp: +s.mrpPerTablet.toFixed(2),
                                           batchNo: s.bestBatch?.batchNo || "",
                                           billId: s.bestBatch?.billId || "",
                                           landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
@@ -1408,16 +1408,16 @@ export default function Home() {
                                             e.preventDefault();
                                             setMedRowsSync(p => p.map((r, idx) => idx === i ? {
                                               ...r,
-                                              medicineName: s.name,
-                                              mrp: s.mrpPerTablet,
+                                              medicineName: s.name, qty: 0,
+                                              mrp: +s.mrpPerTablet.toFixed(2),
                                               batchNo: s.bestBatch?.batchNo || "",
                                               billId: s.bestBatch?.billId || "",
                                               landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
                                             } : r));
                                             medRowsRef.current = medRowsRef.current.map((r, idx) => idx === i ? {
                                               ...r,
-                                              medicineName: s.name,
-                                              mrp: s.mrpPerTablet,
+                                              medicineName: s.name, qty: 0,
+                                              mrp: +s.mrpPerTablet.toFixed(2),
                                               batchNo: s.bestBatch?.batchNo || "",
                                               billId: s.bestBatch?.billId || "",
                                               landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
@@ -1442,23 +1442,34 @@ export default function Home() {
                                 </div>
                               </td>
                               <td className="px-2 py-1 min-w-[90px]">
-                                {r.medicineName ? (
-                                  <select value={r.batchNo}
-                                    onChange={e => {
-                                      const sel = getAvailableBatchesForMedicine(r.medicineName).find(b => b.batchNo === e.target.value);
-                                      if (sel) {
-                                        const updated = { batchNo: sel.batchNo, billId: sel.billId, mrp: sel.mrpPerTablet, landingCostPerTablet: sel.landingCostPerTablet };
-                                        setMedRowsSync(p => p.map((x, idx) => idx === i ? { ...x, ...updated } : x));
-                                        medRowsRef.current = medRowsRef.current.map((x, idx) => idx === i ? { ...x, ...updated } : x);
-                                      }
-                                    }}
-                                    className="w-full border border-slate-300 rounded px-1 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50">
-                                    {getAvailableBatchesForMedicine(r.medicineName).map(b => (
-                                      <option key={b.batchNo} value={b.batchNo}>{b.batchNo} ({b.tabletsAvailable})</option>
-                                    ))}
-                                    {!getAvailableBatchesForMedicine(r.medicineName).length && r.batchNo && <option value={r.batchNo}>{r.batchNo}</option>}
-                                  </select>
-                                ) : <span className="text-slate-300 text-xs">—</span>}
+                                {r.medicineName ? (() => {
+                                  const batches = getAvailableBatchesForMedicine(r.medicineName);
+                                  const selBatch = batches.find(b => b.batchNo === r.batchNo);
+                                  return (
+                                    <div>
+                                      <select value={r.batchNo}
+                                        onChange={e => {
+                                          const sel = batches.find(b => b.batchNo === e.target.value);
+                                          if (sel) {
+                                            const updated = { batchNo: sel.batchNo, billId: sel.billId, mrp: +sel.mrpPerTablet.toFixed(2), landingCostPerTablet: sel.landingCostPerTablet };
+                                            setMedRowsSync(p => p.map((x, idx) => idx === i ? { ...x, ...updated } : x));
+                                            medRowsRef.current = medRowsRef.current.map((x, idx) => idx === i ? { ...x, ...updated } : x);
+                                          }
+                                        }}
+                                        className="w-full border border-slate-300 rounded px-1 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50">
+                                        {batches.map(b => (
+                                          <option key={b.batchNo} value={b.batchNo}>{b.batchNo} ({b.tabletsAvailable})</option>
+                                        ))}
+                                        {!batches.length && r.batchNo && <option value={r.batchNo}>{r.batchNo}</option>}
+                                      </select>
+                                      {selBatch && (
+                                        <span className={`text-[10px] font-mono block mt-0.5 ${selBatch.expiryStatus === "expired" ? "text-red-500 font-bold" : selBatch.expiryStatus === "critical" ? "text-orange-500" : "text-slate-400"}`}>
+                                          Exp: {formatExpiry(selBatch.expiryDate)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })() : <span className="text-slate-300 text-xs">—</span>}
                               </td>
                               <td className="px-2 py-1">
                                 <input type="number" value={r.qty}
