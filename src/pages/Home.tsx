@@ -1333,6 +1333,11 @@ export default function Home() {
                                         setHighlightedSugIdx(prev => prev === null ? medSuggestions.length - 1 : Math.max(prev - 1, 0));
                                         return;
                                       }
+                                      if (e.key === "Enter" && medSuggestions.length === 0) {
+                                        e.preventDefault();
+                                        medQtyRefs.current[i]?.focus();
+                                        return;
+                                      }
                                       if (e.key === "Enter" && medSuggestions.length > 0) {
                                         e.preventDefault();
                                         const s = medSuggestions[highlightedSugIdx ?? 0];
