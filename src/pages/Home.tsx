@@ -1701,6 +1701,7 @@ export default function Home() {
                                   )}
                                   {visit.advice && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Advice: </span>{visit.advice}</p>}
                                   {visit.reports && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Reports: </span>{visit.reports}</p>}
+                                  {visit.fees > 0 && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Fees: </span>₹{visit.fees}</p>}
                                 </div>
                               );
                             })()}
