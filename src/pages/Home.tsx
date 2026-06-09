@@ -742,9 +742,9 @@ export default function Home() {
         billDate: visitDate,
         items,                              // [] when no medicines
         otherCharges: otherCharges ?? 0,
-        totalSale:   medSale,               // pure medicine sale; otherCharges tracked separately
-        totalCost:   medCost,               // 0 when no medicines
-        totalProfit: medProfit,             // pure medicine margin; otherCharges tracked separately
+        totalSale:   medSale + (otherCharges ?? 0),   // medicines + procedure/discount
+        totalCost:   medCost,
+        totalProfit: medProfit + (otherCharges ?? 0), // positive=procedure adds profit, negative=discount reduces it
         createdAt: new Date().toISOString(),
       };
       savePatientBill(patientBill);
