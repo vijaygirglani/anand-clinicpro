@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -246,12 +246,22 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [nameSuggestions, setNameSuggestions] = useState<PatientSuggestion[]>([]);
   const [showNameDropdown, setShowNameDropdown] = useState(false);
+  const [highlightedNameIdx, setHighlightedNameIdx] = useState<number | null>(null);
   const isPrefillingRef = useRef(false); // suppress dropdown during programmatic pre-fill
   const [pendingFees, setPendingFees] = useState<PendingEntry[]>(() => getPendingFees());
   const [feesMarkedPending, setFeesMarkedPending] = useState(false);
   const [pendingAmount, setPendingAmount] = useState<string>("");
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [pendingAlert, setPendingAlert] = useState<PendingEntry | null>(null);
+
+  // ── History bill lookup ──
+  const historyBillMap = useMemo(() => {
+    if (patientHistory.length === 0) return {} as Record<string, PatientBill>;
+    const bills = getPatientBills();
+    const m: Record<string, PatientBill> = {};
+    for (const b of bills) { m[`${b.patientId}_${b.billDate}`] = b; }
+    return m;
+  }, [patientHistory]);
 
   // ── Medicine Table state ──
   interface MedRow {
@@ -396,9 +406,11 @@ export default function Home() {
       const results = searchPatientSuggestions(nameValue);
       setNameSuggestions(results);
       setShowNameDropdown(results.length > 0);
+      setHighlightedNameIdx(null);
     } else {
       setNameSuggestions([]);
       setShowNameDropdown(false);
+      setHighlightedNameIdx(null);
     }
   }, [nameValue]);
 
@@ -771,7 +783,7 @@ export default function Home() {
     setPatientHistory([]);
     setHistoryName("");
     setHistoryMobile("");
-    setMedRowsSync([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+    setMedRowsSync([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
     setOtherCharges(0);
     setEditPatientId(null);
     setEditBillId(null);
@@ -899,8 +911,29 @@ export default function Home() {
                             (nameRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
                           }}
                           onKeyDown={e => {
-                            if (e.key === "Enter") { e.preventDefault(); setShowNameDropdown(false); ageRef.current?.focus(); }
-                            if (e.key === "Escape") setShowNameDropdown(false);
+                            if (e.key === "ArrowDown" && showNameDropdown && nameSuggestions.length > 0) {
+                              e.preventDefault();
+                              setHighlightedNameIdx(prev => prev === null ? 0 : Math.min(prev + 1, nameSuggestions.length - 1));
+                              return;
+                            }
+                            if (e.key === "ArrowUp" && showNameDropdown && nameSuggestions.length > 0) {
+                              e.preventDefault();
+                              setHighlightedNameIdx(prev => prev === null ? nameSuggestions.length - 1 : Math.max(prev - 1, 0));
+                              return;
+                            }
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              if (showNameDropdown && highlightedNameIdx !== null && nameSuggestions[highlightedNameIdx]) {
+                                handleSelectSuggestion(nameSuggestions[highlightedNameIdx]);
+                                setHighlightedNameIdx(null);
+                              } else {
+                                setShowNameDropdown(false);
+                                setHighlightedNameIdx(null);
+                                ageRef.current?.focus();
+                              }
+                              return;
+                            }
+                            if (e.key === "Escape") { setShowNameDropdown(false); setHighlightedNameIdx(null); }
                           }}
                           onBlur={() => setTimeout(() => setShowNameDropdown(false), 200)}
                           className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
@@ -925,8 +958,10 @@ export default function Home() {
                             <button
                               key={i}
                               type="button"
-                              onMouseDown={e => { e.preventDefault(); handleSelectSuggestion(s); }}
-                              className="w-full px-4 py-3 hover:bg-blue-50 transition-colors text-left border-b border-slate-50 last:border-0"
+                              ref={el => { if (el && i === highlightedNameIdx) el.scrollIntoView({ block: "nearest" }); }}
+                              onMouseDown={e => { e.preventDefault(); setHighlightedNameIdx(null); handleSelectSuggestion(s); }}
+                              onMouseEnter={() => setHighlightedNameIdx(i)}
+                              className={`w-full px-4 py-3 transition-colors text-left border-b border-slate-50 last:border-0 ${i === highlightedNameIdx ? "bg-blue-50" : "hover:bg-blue-50"}`}
                             >
                               <div className="flex items-start gap-3">
                                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0 mt-0.5">
@@ -1641,11 +1676,23 @@ export default function Home() {
                                 <span className="text-[10px] text-slate-400 font-medium">tap to edit</span>
                               </div>
                             </div>
-                            <div className="space-y-1">
-                              {visit.complaint && <p className="text-xs text-slate-700"><span className="text-[10px] uppercase text-slate-400 font-bold">Complaint: </span>{visit.complaint}</p>}
-                              {visit.treatment && <p className="text-xs text-slate-600"><span className="text-[10px] uppercase text-slate-400 font-bold">Treatment: </span>{visit.treatment}</p>}
-                              {visit.advice && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Advice: </span>{visit.advice}</p>}
-                            </div>
+                            {(() => {
+                              const visitBill = historyBillMap[`${visit.id}_${visit.visitDate}`];
+                              return (
+                                <div className="space-y-1">
+                                  {visit.complaint && <p className="text-xs text-slate-700"><span className="text-[10px] uppercase text-slate-400 font-bold">Complaint: </span>{visit.complaint}</p>}
+                                  {visit.treatment && <p className="text-xs text-slate-600"><span className="text-[10px] uppercase text-slate-400 font-bold">Treatment: </span>{visit.treatment}</p>}
+                                  {visitBill && visitBill.items.length > 0 && (
+                                    <div>
+                                      <span className="text-[10px] uppercase text-slate-400 font-bold">Medicines: </span>
+                                      <span className="text-xs text-slate-700">{visitBill.items.map(it => `${it.medicineName} ×${it.qtyTablets}`).join(", ")}</span>
+                                    </div>
+                                  )}
+                                  {visit.advice && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Advice: </span>{visit.advice}</p>}
+                                  {visit.reports && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Reports: </span>{visit.reports}</p>}
+                                </div>
+                              );
+                            })()}
                             <div className="mt-2 flex justify-end">
                               <button type="button" onClick={e => { e.stopPropagation(); printPatientPrescription(visit); }}
                                 className="flex items-center gap-1 text-xs text-slate-400 hover:text-primary transition-colors">
