@@ -898,7 +898,8 @@ export default function Home() {
                             (nameRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
                           }}
                           onKeyDown={e => {
-                            if (e.key === "Enter") { e.preventDefault(); runNameLookup(); setShowNameDropdown(false); }
+                            if (e.key === "Enter") { e.preventDefault(); runNameLookup(); setShowNameDropdown(false); ageRef.current?.focus(); }
+                            if (e.key === "Tab") { e.preventDefault(); setShowNameDropdown(false); ageRef.current?.focus(); }
                             if (e.key === "Escape") setShowNameDropdown(false);
                           }}
                           onBlur={() => setTimeout(() => setShowNameDropdown(false), 200)}
