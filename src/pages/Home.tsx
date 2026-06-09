@@ -288,6 +288,7 @@ export default function Home() {
   const medQtyRefs = useRef<(HTMLInputElement | null)[]>([]);
   const otherChargesRef = useRef<HTMLInputElement | null>(null);
   const ageRef = useRef<HTMLInputElement | null>(null);
+  const ageMonthsRef = useRef<HTMLInputElement | null>(null);
   const weightRef = useRef<HTMLInputElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
   const complaintCodeRef = useRef<HTMLInputElement | null>(null);
@@ -787,6 +788,7 @@ export default function Home() {
   const { ref: mobileRHFRef, ...mobileRest } = form.register("mobile");
   const { ref: nameRHFRef, ...nameRest } = form.register("name");
   const { ref: ageRHFRef, ...ageRest } = form.register("age");
+  const { ref: ageMonthsRHFRef, ...ageMonthsRest } = form.register("ageMonths");
   const { ref: weightRHFRef, ...weightRest } = form.register("weight");
   const { ref: addressRHFRef, ...addressRest } = form.register("address");
   const { ref: complaintCodeRHFRef, ...complaintCodeRest } = form.register("complaintCode");
@@ -862,7 +864,6 @@ export default function Home() {
                           }}
                           onKeyDown={e => {
                             if (e.key === "Enter") { e.preventDefault(); runMobileLookup(); nameRef.current?.focus(); }
-                            if (e.key === "Tab") { e.preventDefault(); nameRef.current?.focus(); }
                           }}
                           className="w-full pl-4 pr-10 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800 font-mono"
                           placeholder="Mobile or Case No."
@@ -899,7 +900,6 @@ export default function Home() {
                           }}
                           onKeyDown={e => {
                             if (e.key === "Enter") { e.preventDefault(); runNameLookup(); setShowNameDropdown(false); ageRef.current?.focus(); }
-                            if (e.key === "Tab") { e.preventDefault(); setShowNameDropdown(false); ageRef.current?.focus(); }
                             if (e.key === "Escape") setShowNameDropdown(false);
                           }}
                           onBlur={() => setTimeout(() => setShowNameDropdown(false), 200)}
@@ -970,12 +970,14 @@ export default function Home() {
                       <div className="flex-1 relative">
                         <input type="number" {...ageRest} min={0}
                           ref={el => { ageRHFRef(el); ageRef.current = el; }}
-                          onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); weightRef.current?.focus(); } }}
+                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); ageMonthsRef.current?.focus(); } }}
                           className="w-full px-3 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="0" />
                         <span className="absolute right-2 top-3.5 text-xs text-slate-400">yrs</span>
                       </div>
                       <div className="w-20 relative">
-                        <input type="number" {...form.register("ageMonths")} min={0} max={11}
+                        <input type="number" {...ageMonthsRest} min={0} max={11}
+                          ref={el => { ageMonthsRHFRef(el); ageMonthsRef.current = el; }}
+                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); weightRef.current?.focus(); } }}
                           className="w-full px-2 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="0" />
                         <span className="absolute right-2 top-3.5 text-xs text-slate-400">mo</span>
                       </div>
@@ -987,7 +989,7 @@ export default function Home() {
                     </label>
                     <input {...weightRest}
                       ref={el => { weightRHFRef(el); weightRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); addressRef.current?.focus(); } }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addressRef.current?.focus(); } }}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="e.g. 65 kg" />
                   </div>
                   <div className="space-y-2">
@@ -996,7 +998,7 @@ export default function Home() {
                     </label>
                     <input {...addressRest}
                       ref={el => { addressRHFRef(el); addressRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); complaintCodeRef.current?.focus(); } }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); complaintCodeRef.current?.focus(); } }}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="City / Area" />
                   </div>
                 </div>
@@ -1011,7 +1013,7 @@ export default function Home() {
                     </label>
                     <input {...complaintCodeRest}
                       ref={el => { complaintCodeRHFRef(el); complaintCodeRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); complaintRef.current?.focus(); } }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); complaintRef.current?.focus(); } }}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 uppercase transition-all text-slate-800"
                       placeholder="E.G. CCF" />
                   </div>
@@ -1076,7 +1078,7 @@ export default function Home() {
                   <label className="text-sm font-semibold text-slate-700">Presenting Complaints</label>
                   <textarea {...complaintRest}
                     ref={el => { complaintRHFRef(el); complaintRef.current = el; }}
-                    onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); adviceRef.current?.focus(); } }}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); (medInputRefs.current[0] ?? otherChargesRef.current)?.focus(); } }}
                     rows={2}
                     className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Describe the symptoms..." />
                 </div>
@@ -1331,7 +1333,7 @@ export default function Home() {
                                         setHighlightedSugIdx(prev => prev === null ? medSuggestions.length - 1 : Math.max(prev - 1, 0));
                                         return;
                                       }
-                                      if ((e.key === "Enter" || e.key === "Tab") && medSuggestions.length > 0) {
+                                      if (e.key === "Enter" && medSuggestions.length > 0) {
                                         e.preventDefault();
                                         const s = medSuggestions[highlightedSugIdx ?? 0];
                                         setMedRowsSync(p => p.map((r, idx) => idx === i ? {
@@ -1350,11 +1352,6 @@ export default function Home() {
                                         setActiveMedIdx(null);
                                         setHighlightedSugIdx(null);
                                         setTimeout(() => medQtyRefs.current[i]?.focus(), 0);
-                                        return;
-                                      }
-                                      if (e.key === "Tab") {
-                                        e.preventDefault();
-                                        medQtyRefs.current[i]?.focus();
                                       }
                                     }}
                                     placeholder="Type medicine name..."
@@ -1428,7 +1425,7 @@ export default function Home() {
                                   ref={el => { medQtyRefs.current[i] = el; }}
                                   onChange={e => updateMedRow(i, "qty", Number(e.target.value))}
                                   onKeyDown={e => {
-                                    if (e.key === "Enter" || e.key === "Tab") {
+                                    if (e.key === "Enter") {
                                       e.preventDefault();
                                       const nextIdx = i + 1;
                                       if (nextIdx < medRows.length) {
@@ -1477,7 +1474,7 @@ export default function Home() {
                             <input type="number" value={otherCharges || ""}
                               ref={otherChargesRef}
                               onChange={e => setOtherCharges(Number(e.target.value))}
-                              onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); submitBtnRef.current?.focus(); } }}
+                              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); adviceRef.current?.focus(); } }}
                               className="w-24 border border-white/20 rounded px-2 py-1 text-xs text-right focus:outline-none bg-white/10 text-white placeholder-white/30"
                               placeholder="0" />
                             <span className="text-white/40 text-xs">(-=discount +procedure)</span>
@@ -1498,7 +1495,7 @@ export default function Home() {
                     </label>
                     <textarea {...adviceRest}
                       ref={el => { adviceRHFRef(el); adviceRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); reportsRef.current?.focus(); } }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); reportsRef.current?.focus(); } }}
                       rows={2}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="F5 · Rest, diet..." />
                   </div>
@@ -1506,7 +1503,7 @@ export default function Home() {
                     <label className="text-sm font-semibold text-slate-700">Reports Required</label>
                     <textarea {...reportsRest}
                       ref={el => { reportsRHFRef(el); reportsRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); medInputRefs.current[0]?.focus(); } }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); form.handleSubmit(onSubmit)(); } }}
                       rows={2}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Blood test, X-ray..." />
                   </div>
