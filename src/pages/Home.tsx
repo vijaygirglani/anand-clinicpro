@@ -985,14 +985,18 @@ export default function Home() {
                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       <Weight className="w-4 h-4 text-slate-400" /> Weight
                     </label>
-                    <input {...form.register("weight")}
+                    <input {...weightRest}
+                      ref={el => { weightRHFRef(el); weightRef.current = el; }}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); addressRef.current?.focus(); } }}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="e.g. 65 kg" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-slate-400" /> Address
                     </label>
-                    <input {...form.register("address")}
+                    <input {...addressRest}
+                      ref={el => { addressRHFRef(el); addressRef.current = el; }}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); complaintCodeRef.current?.focus(); } }}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="City / Area" />
                   </div>
                 </div>
@@ -1005,7 +1009,9 @@ export default function Home() {
                     <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       <Activity className="w-4 h-4 text-slate-400" /> Complaint Code
                     </label>
-                    <input {...form.register("complaintCode")}
+                    <input {...complaintCodeRest}
+                      ref={el => { complaintCodeRHFRef(el); complaintCodeRef.current = el; }}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); complaintRef.current?.focus(); } }}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 uppercase transition-all text-slate-800"
                       placeholder="E.G. CCF" />
                   </div>
@@ -1068,7 +1074,10 @@ export default function Home() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700">Presenting Complaints</label>
-                  <textarea {...form.register("complaint")} rows={2}
+                  <textarea {...complaintRest}
+                    ref={el => { complaintRHFRef(el); complaintRef.current = el; }}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); adviceRef.current?.focus(); } }}
+                    rows={2}
                     className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Describe the symptoms..." />
                 </div>
 
@@ -1311,21 +1320,18 @@ export default function Home() {
                                     }}
                                     onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }, 150)}
                                     onKeyDown={(e) => {
-                                      if (e.key === "Tab") {
-                                        e.preventDefault();
-                                        otherChargesRef.current?.focus();
-                                        return;
-                                      }
-                                      if (e.key === "Escape") { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }
+                                      if (e.key === "Escape") { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); return; }
                                       if (e.key === "ArrowDown" && medSuggestions.length > 0) {
                                         e.preventDefault();
                                         setHighlightedSugIdx(prev => prev === null ? 0 : Math.min(prev + 1, medSuggestions.length - 1));
+                                        return;
                                       }
                                       if (e.key === "ArrowUp" && medSuggestions.length > 0) {
                                         e.preventDefault();
                                         setHighlightedSugIdx(prev => prev === null ? medSuggestions.length - 1 : Math.max(prev - 1, 0));
+                                        return;
                                       }
-                                      if (e.key === "Enter" && medSuggestions.length > 0) {
+                                      if ((e.key === "Enter" || e.key === "Tab") && medSuggestions.length > 0) {
                                         e.preventDefault();
                                         const s = medSuggestions[highlightedSugIdx ?? 0];
                                         setMedRowsSync(p => p.map((r, idx) => idx === i ? {
@@ -1344,6 +1350,11 @@ export default function Home() {
                                         setActiveMedIdx(null);
                                         setHighlightedSugIdx(null);
                                         setTimeout(() => medQtyRefs.current[i]?.focus(), 0);
+                                        return;
+                                      }
+                                      if (e.key === "Tab") {
+                                        e.preventDefault();
+                                        medQtyRefs.current[i]?.focus();
                                       }
                                     }}
                                     placeholder="Type medicine name..."
@@ -1417,12 +1428,7 @@ export default function Home() {
                                   ref={el => { medQtyRefs.current[i] = el; }}
                                   onChange={e => updateMedRow(i, "qty", Number(e.target.value))}
                                   onKeyDown={e => {
-                                    if (e.key === "Tab") {
-                                      e.preventDefault();
-                                      otherChargesRef.current?.focus();
-                                      return;
-                                    }
-                                    if (e.key === "Enter") {
+                                    if (e.key === "Enter" || e.key === "Tab") {
                                       e.preventDefault();
                                       const nextIdx = i + 1;
                                       if (nextIdx < medRows.length) {
@@ -1471,7 +1477,7 @@ export default function Home() {
                             <input type="number" value={otherCharges || ""}
                               ref={otherChargesRef}
                               onChange={e => setOtherCharges(Number(e.target.value))}
-                              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); form.handleSubmit(onSubmit)(); } }}
+                              onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); submitBtnRef.current?.focus(); } }}
                               className="w-24 border border-white/20 rounded px-2 py-1 text-xs text-right focus:outline-none bg-white/10 text-white placeholder-white/30"
                               placeholder="0" />
                             <span className="text-white/40 text-xs">(-=discount +procedure)</span>
@@ -1490,12 +1496,18 @@ export default function Home() {
                       Advice / Notes
                       <span className="text-slate-400 font-normal text-xs ml-2">— F5 = follow-up after 5 days</span>
                     </label>
-                    <textarea {...form.register("advice")} rows={2}
+                    <textarea {...adviceRest}
+                      ref={el => { adviceRHFRef(el); adviceRef.current = el; }}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); reportsRef.current?.focus(); } }}
+                      rows={2}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="F5 · Rest, diet..." />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Reports Required</label>
-                    <textarea {...form.register("reports")} rows={2}
+                    <textarea {...reportsRest}
+                      ref={el => { reportsRHFRef(el); reportsRef.current = el; }}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); medInputRefs.current[0]?.focus(); } }}
+                      rows={2}
                       className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Blood test, X-ray..." />
                   </div>
                 </div>
@@ -1535,6 +1547,8 @@ export default function Home() {
                   </button>
                 )}
                 <button type="submit"
+                  ref={submitBtnRef}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); form.handleSubmit(onSubmit)(); } }}
                   className="px-7 py-3 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2"
                   style={{background: `rgb(var(--primary))`}}>
                   <Save className="w-5 h-5" /> Save Patient
