@@ -262,8 +262,8 @@ export default function Home() {
     billId: string;
     landingCostPerTablet: number;
   }
-  const [medRows, setMedRows] = useState<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
-  const medRowsRef = useRef<MedRow[]>([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+  const [medRows, setMedRows] = useState<MedRow[]>([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+  const medRowsRef = useRef<MedRow[]>([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
   const setMedRowsSync = (rows: MedRow[] | ((prev: MedRow[]) => MedRow[])) => {
     setMedRows(prev => {
       const next = typeof rows === "function" ? rows(prev) : rows;
@@ -285,8 +285,10 @@ export default function Home() {
   const [highlightedSugIdx, setHighlightedSugIdx] = useState<number | null>(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const medQtyRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const otherChargesRef = useRef<HTMLInputElement | null>(null);
 
-  const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+  const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
 
   // Check if medicine has multiple batches (different MRPs)
   const hasMultipleBatches = (medicineName: string): boolean => {
@@ -425,7 +427,7 @@ export default function Home() {
       setOtherCharges(bill.otherCharges ?? 0);
       setEditBillId(bill.id);
     } else {
-      setMedRowsSync([{ medicineName: "", qty: 1, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+      setMedRowsSync([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
       setOtherCharges(0);
       setEditBillId(null);
     }
@@ -1270,6 +1272,7 @@ export default function Home() {
                                     </span>
                                   )}
                                   <input value={r.medicineName}
+                                    ref={el => { medInputRefs.current[i] = el; }}
                                     onChange={e => {
                                       updateMedRow(i, "medicineName", e.target.value);
                                       updateMedRow(i, "mrp", 0);
@@ -1288,6 +1291,11 @@ export default function Home() {
                                     }}
                                     onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }, 150)}
                                     onKeyDown={(e) => {
+                                      if (e.key === "Tab") {
+                                        e.preventDefault();
+                                        otherChargesRef.current?.focus();
+                                        return;
+                                      }
                                       if (e.key === "Escape") { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }
                                       if (e.key === "ArrowDown" && medSuggestions.length > 0) {
                                         e.preventDefault();
@@ -1315,6 +1323,7 @@ export default function Home() {
                                         setMedSuggestions([]);
                                         setActiveMedIdx(null);
                                         setHighlightedSugIdx(null);
+                                        setTimeout(() => medQtyRefs.current[i]?.focus(), 0);
                                       }
                                     }}
                                     placeholder="Type medicine name..."
@@ -1348,6 +1357,7 @@ export default function Home() {
                                             setMedSuggestions([]);
                                             setActiveMedIdx(null);
                                             setHighlightedSugIdx(null);
+                                            setTimeout(() => medQtyRefs.current[i]?.focus(), 0);
                                           }}
                                           className={`w-full text-left px-3 py-2.5 text-xs flex items-center justify-between gap-2 border-b border-slate-50 last:border-0 ${si === highlightedSugIdx ? "bg-blue-50" : "hover:bg-blue-50"} ${si === 0 ? "rounded-t-lg" : ""}`}>
                                           <span className="font-semibold text-slate-800">{s.name}</span>
@@ -1384,7 +1394,25 @@ export default function Home() {
                               </td>
                               <td className="px-2 py-1">
                                 <input type="number" value={r.qty}
+                                  ref={el => { medQtyRefs.current[i] = el; }}
                                   onChange={e => updateMedRow(i, "qty", Number(e.target.value))}
+                                  onKeyDown={e => {
+                                    if (e.key === "Tab") {
+                                      e.preventDefault();
+                                      otherChargesRef.current?.focus();
+                                      return;
+                                    }
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      const nextIdx = i + 1;
+                                      if (nextIdx < medRows.length) {
+                                        medInputRefs.current[nextIdx]?.focus();
+                                      } else {
+                                        setMedRowsSync(p => [...p, { medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+                                        setTimeout(() => medInputRefs.current[nextIdx]?.focus(), 50);
+                                      }
+                                    }
+                                  }}
                                   className="w-16 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white" />
                               </td>
                               <td className="px-2 py-1">
@@ -1421,7 +1449,9 @@ export default function Home() {
                           <div className="flex items-center gap-1.5">
                             <label className="text-white/70 whitespace-nowrap">Procedure / Discount:</label>
                             <input type="number" value={otherCharges || ""}
+                              ref={otherChargesRef}
                               onChange={e => setOtherCharges(Number(e.target.value))}
+                              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); form.handleSubmit(onSubmit)(); } }}
                               className="w-24 border border-white/20 rounded px-2 py-1 text-xs text-right focus:outline-none bg-white/10 text-white placeholder-white/30"
                               placeholder="0" />
                             <span className="text-white/40 text-xs">(-=discount +procedure)</span>
