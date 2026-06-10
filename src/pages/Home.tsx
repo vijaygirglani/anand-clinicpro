@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -232,6 +232,54 @@ const emptyDefaults: PatientFormValues = {
   advice: "", reports: "", fees: 0,
 };
 
+interface VisitCardProps {
+  visit: import("@/lib/store").Patient;
+  bill: import("@/lib/inventory").PatientBill | undefined;
+  onSelect: (visit: import("@/lib/store").Patient) => void;
+  onPrint: (visit: import("@/lib/store").Patient) => void;
+}
+const VisitCard = React.memo(function VisitCard({ visit, bill, onSelect, onPrint }: VisitCardProps) {
+  return (
+    <div
+      className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer"
+      onClick={() => { onSelect(visit); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-xs font-bold px-2 py-1 bg-white rounded-md border border-slate-200 text-slate-600">
+          {format(new Date(visit.visitDate), "dd MMM yyyy")}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {visit.registerType === "ayurvedic" && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">AYU</span>
+          )}
+          {visit.fees > 0 && (
+            <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-md">₹{visit.fees}</span>
+          )}
+          <span className="text-[10px] text-slate-400 font-medium">tap to edit</span>
+        </div>
+      </div>
+      <div className="space-y-1">
+        {visit.complaint && <p className="text-xs text-slate-700"><span className="text-[10px] uppercase text-slate-400 font-bold">Complaint: </span>{visit.complaint}</p>}
+        {visit.treatment && <p className="text-xs text-slate-600"><span className="text-[10px] uppercase text-slate-400 font-bold">Treatment: </span>{visit.treatment}</p>}
+        {bill && bill.items.length > 0 && (
+          <div>
+            <span className="text-[10px] uppercase text-slate-400 font-bold">Medicines: </span>
+            <span className="text-xs text-slate-700">{bill.items.map(it => `${it.medicineName} ×${it.qtyTablets}`).join(", ")}</span>
+          </div>
+        )}
+        {visit.advice && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Advice: </span>{visit.advice}</p>}
+        {visit.reports && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Reports: </span>{visit.reports}</p>}
+        {visit.fees > 0 && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Fees: </span>₹{visit.fees}</p>}
+      </div>
+      <div className="mt-2 flex justify-end">
+        <button type="button" onClick={e => { e.stopPropagation(); onPrint(visit); }}
+          className="flex items-center gap-1 text-xs text-slate-400 hover:text-primary transition-colors">
+          <Printer className="w-3 h-3" /> Print
+        </button>
+      </div>
+    </div>
+  );
+});
+
 export default function Home() {
   const { toast } = useToast();
   const [isLookingUp, setIsLookingUp] = useState(false);
@@ -265,6 +313,7 @@ export default function Home() {
 
   // ── Medicine Table state ──
   interface MedRow {
+    _id: string;
     medicineName: string;
     qty: number;
     mrp: number;
@@ -272,8 +321,8 @@ export default function Home() {
     billId: string;
     landingCostPerTablet: number;
   }
-  const [medRows, setMedRows] = useState<MedRow[]>([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
-  const medRowsRef = useRef<MedRow[]>([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+  const [medRows, setMedRows] = useState<MedRow[]>([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+  const medRowsRef = useRef<MedRow[]>([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
   const setMedRowsSync = (rows: MedRow[] | ((prev: MedRow[]) => MedRow[])) => {
     setMedRows(prev => {
       const next = typeof rows === "function" ? rows(prev) : rows;
@@ -284,8 +333,8 @@ export default function Home() {
   const [otherCharges, setOtherCharges] = useState<number>(0);
   const [editPatientId, setEditPatientId] = useState<number | null>(null);
   const [editBillId, setEditBillId]       = useState<string | null>(null);
-  const medGross = medRows.reduce((s, r) => s + r.mrp * r.qty, 0);
-  const billAmount = Math.ceil(medGross + otherCharges);
+  const medGross = useMemo(() => medRows.reduce((s, r) => s + r.mrp * r.qty, 0), [medRows]);
+  const billAmount = useMemo(() => Math.ceil(medGross + otherCharges), [medGross, otherCharges]);
   // medNames no longer needed - using searchMedicineNames from inventory
   const activeDoctor = getActiveDoctor();
   const [waPatient, setWaPatient] = useState<{name: string; mobile: string; advice?: string} | null>(null);
@@ -294,6 +343,19 @@ export default function Home() {
   const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
   const [highlightedSugIdx, setHighlightedSugIdx] = useState<number | null>(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+  const medDropdownStyle = useMemo(() => ({
+    position: "fixed" as const,
+    zIndex: 99999,
+    backgroundColor: "white",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
+    width: `${Math.max(dropdownPos.width, 320)}px`,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    top: `${dropdownPos.top}px`,
+    left: `${dropdownPos.left}px`,
+  }), [dropdownPos]);
   const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const medQtyRefs = useRef<(HTMLInputElement | null)[]>([]);
   const otherChargesRef = useRef<HTMLInputElement | null>(null);
@@ -307,7 +369,7 @@ export default function Home() {
   const reportsRef = useRef<HTMLTextAreaElement | null>(null);
   const submitBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  const addMedRow = () => setMedRowsSync(p => [...p, { medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+  const addMedRow = () => setMedRowsSync(p => [...p, { _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
 
   // Check if medicine has multiple batches (different MRPs)
   const hasMultipleBatches = (medicineName: string): boolean => {
@@ -318,7 +380,7 @@ export default function Home() {
     return mrps.size > 1;
   };
 
-  const getMedSuggestions = (query: string) => {
+  const getMedSuggestions = useCallback((query: string) => {
     if (!query || query.length < 1) return [];
     const results = searchMedicineNames(query);
     const suggestions: {name: string; mrpPerTablet: number; currentStock: number; bestBatch: any; batchLabel: string}[] = [];
@@ -346,7 +408,8 @@ export default function Home() {
       }
     }
     return suggestions.slice(0, 10);
-  };
+  }, []);
+  const medSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
     setMedRowsSync(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
   const removeMedRow = (i: number) => setMedRowsSync(p => p.filter((_, idx) => idx !== i));
@@ -399,19 +462,22 @@ export default function Home() {
   // Live dropdown: watch name field, search on every keystroke
   useEffect(() => {
     if (isPrefillingRef.current) {
-      isPrefillingRef.current = false; // consume the flag; subsequent keystrokes work normally
+      isPrefillingRef.current = false;
       return;
     }
-    if (nameValue && nameValue.length >= 2) {
+    if (!nameValue || nameValue.length < 2) {
+      setNameSuggestions([]);
+      setShowNameDropdown(false);
+      setHighlightedNameIdx(null);
+      return;
+    }
+    const timer = setTimeout(() => {
       const results = searchPatientSuggestions(nameValue);
       setNameSuggestions(results);
       setShowNameDropdown(results.length > 0);
       setHighlightedNameIdx(null);
-    } else {
-      setNameSuggestions([]);
-      setShowNameDropdown(false);
-      setHighlightedNameIdx(null);
-    }
+    }, 300);
+    return () => clearTimeout(timer);
   }, [nameValue]);
 
   // ── Pre-fill form from a Patient record (history click OR ?edit= URL param) ──
@@ -438,6 +504,7 @@ export default function Home() {
     );
     if (bill) {
       setMedRowsSync(bill.items.map(i => ({
+        _id:                  crypto.randomUUID(),
         medicineName:         i.medicineName,
         qty:                  i.qtyTablets,
         mrp:                  +i.mrpPerTablet.toFixed(2),
@@ -448,7 +515,7 @@ export default function Home() {
       setOtherCharges(bill.otherCharges ?? 0);
       setEditBillId(bill.id);
     } else {
-      setMedRowsSync([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+      setMedRowsSync([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
       setOtherCharges(0);
       setEditBillId(null);
     }
@@ -479,6 +546,7 @@ export default function Home() {
             const results = searchMedicineNames(m.medicineName);
             const match = results.find(r => r.name.toLowerCase() === m.medicineName.toLowerCase());
             return {
+              _id: crypto.randomUUID(),
               medicineName: m.medicineName,
               qty: m.defaultQty ?? 0,
               mrp: match?.bestBatch ? +match.bestBatch.mrpPerTablet.toFixed(2) : 0,
@@ -490,21 +558,24 @@ export default function Home() {
         }
       }
     }
-  }, [complaintCodeValue, form]);
+  }, [complaintCodeValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-match diseases from complaint text
   useEffect(() => {
-    if (complaintValue && complaintValue.length >= 3) {
+    if (!complaintValue || complaintValue.length < 3) {
+      setPaMatches([]);
+      setShowPAPanel(false);
+      return;
+    }
+    const timer = setTimeout(() => {
       const freshImported = getAllDiseases();
       setImportedDiseases(freshImported);
       const matches = matchDiseasesToComplaint(complaintValue, freshImported);
       setPaMatches(matches);
       if (matches.length > 0 && !selectedPADisease) setShowPAPanel(true);
-    } else {
-      setPaMatches([]);
-      setShowPAPanel(false);
-    }
-  }, [complaintValue]);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [complaintValue]); // selectedPADisease intentionally omitted to avoid re-triggering
 
   // Read directly from DOM ref so we always get the latest typed value
   const runMobileLookup = useCallback(() => {
@@ -644,11 +715,19 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (filterMode === "complaint" || filterMode === "address") {
-      if (!filterQuery || filterQuery.length < 2) { setFilterResults([]); return; }
+    if (filterMode !== "complaint" && filterMode !== "address") {
+      setFilterResults([]);
+      return;
+    }
+    if (!filterQuery || filterQuery.length < 2) {
+      setFilterResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
       if (filterMode === "complaint") setFilterResults(lookupByComplaint(filterQuery));
       else setFilterResults(lookupByAddress(filterQuery));
-    }
+    }, 300);
+    return () => clearTimeout(timer);
   }, [filterQuery, filterMode]);
 
   const sendPathyaWhatsApp = (disease: PADisease) => {
@@ -789,7 +868,7 @@ export default function Home() {
     setPatientHistory([]);
     setHistoryName("");
     setHistoryMobile("");
-    setMedRowsSync([{ medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+    setMedRowsSync([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
     setOtherCharges(0);
     setEditPatientId(null);
     setEditBillId(null);
@@ -1331,7 +1410,7 @@ export default function Home() {
                       </thead>
                       <tbody>
                         {medRows.map((r, i) => (
-                            <tr key={i} className={`border-b border-slate-200 transition-colors hover:bg-blue-50/40
+                            <tr key={r._id} className={`border-b border-slate-200 transition-colors hover:bg-blue-50/40
                               ${hasMultipleBatches(r.medicineName)
                                 ? "bg-orange-50/60 border-l-2 border-l-orange-400"
                                 : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
@@ -1346,20 +1425,24 @@ export default function Home() {
                                   <input value={r.medicineName}
                                     ref={el => { medInputRefs.current[i] = el; }}
                                     onChange={e => {
-                                      updateMedRow(i, "medicineName", e.target.value);
+                                      const val = e.target.value;
+                                      updateMedRow(i, "medicineName", val);
                                       updateMedRow(i, "mrp", 0);
-                                      setActiveMedIdx(i);
-                                      setHighlightedSugIdx(null);
-                                      setMedSuggestions(getMedSuggestions(e.target.value));
                                       const rect = e.currentTarget.getBoundingClientRect();
                                       setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
+                                      if (medSearchTimerRef.current) clearTimeout(medSearchTimerRef.current);
+                                      medSearchTimerRef.current = setTimeout(() => {
+                                        setActiveMedIdx(i);
+                                        setHighlightedSugIdx(null);
+                                        setMedSuggestions(getMedSuggestions(val));
+                                      }, 220);
                                     }}
                                     onFocus={(e) => {
                                       const rect = e.currentTarget.getBoundingClientRect();
                                       setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
                                       setActiveMedIdx(i);
                                       setHighlightedSugIdx(null);
-                                      setMedSuggestions(getMedSuggestions(r.medicineName));
+                                      if (r.medicineName) setMedSuggestions(getMedSuggestions(r.medicineName));
                                     }}
                                     onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }, 150)}
                                     onKeyDown={(e) => {
@@ -1404,7 +1487,7 @@ export default function Home() {
                                     autoComplete="off"
                                     className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
                                   {activeMedIdx === i && medSuggestions.length > 0 && (
-                                    <div style={{ position: "fixed", zIndex: 99999, backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 10px 25px rgba(0,0,0,0.15)", width: Math.max(dropdownPos.width, 320) + "px", maxHeight: "240px", overflowY: "auto", top: dropdownPos.top + "px", left: dropdownPos.left + "px" }}
+                                    <div style={medDropdownStyle}
                                       id={`med-dropdown-${i}`}>
                                       {medSuggestions.map((s, si) => (
                                         <button key={si} type="button"
@@ -1488,7 +1571,7 @@ export default function Home() {
                                       if (nextIdx < medRows.length) {
                                         medInputRefs.current[nextIdx]?.focus();
                                       } else {
-                                        setMedRowsSync(p => [...p, { medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+                                        setMedRowsSync(p => [...p, { _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
                                         setTimeout(() => medInputRefs.current[nextIdx]?.focus(), 50);
                                       }
                                     }
@@ -1675,49 +1758,14 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        {patientHistory.map((visit, i) => (
-                          <div key={i}
-                            className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer"
-                            onClick={() => { prefillFromPatient(visit); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-                            <div className="flex justify-between items-center mb-2">
-                              <span className="text-xs font-bold px-2 py-1 bg-white rounded-md border border-slate-200 text-slate-600">
-                                {format(new Date(visit.visitDate), "dd MMM yyyy")}
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                {visit.registerType === "ayurvedic" && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">AYU</span>
-                                )}
-                                {visit.fees > 0 && (
-                                  <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-md">₹{visit.fees}</span>
-                                )}
-                                <span className="text-[10px] text-slate-400 font-medium">tap to edit</span>
-                              </div>
-                            </div>
-                            {(() => {
-                              const visitBill = historyBillMap[`${visit.id}_${visit.visitDate}`];
-                              return (
-                                <div className="space-y-1">
-                                  {visit.complaint && <p className="text-xs text-slate-700"><span className="text-[10px] uppercase text-slate-400 font-bold">Complaint: </span>{visit.complaint}</p>}
-                                  {visit.treatment && <p className="text-xs text-slate-600"><span className="text-[10px] uppercase text-slate-400 font-bold">Treatment: </span>{visit.treatment}</p>}
-                                  {visitBill && visitBill.items.length > 0 && (
-                                    <div>
-                                      <span className="text-[10px] uppercase text-slate-400 font-bold">Medicines: </span>
-                                      <span className="text-xs text-slate-700">{visitBill.items.map(it => `${it.medicineName} ×${it.qtyTablets}`).join(", ")}</span>
-                                    </div>
-                                  )}
-                                  {visit.advice && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Advice: </span>{visit.advice}</p>}
-                                  {visit.reports && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Reports: </span>{visit.reports}</p>}
-                                  {visit.fees > 0 && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Fees: </span>₹{visit.fees}</p>}
-                                </div>
-                              );
-                            })()}
-                            <div className="mt-2 flex justify-end">
-                              <button type="button" onClick={e => { e.stopPropagation(); printPatientPrescription(visit); }}
-                                className="flex items-center gap-1 text-xs text-slate-400 hover:text-primary transition-colors">
-                                <Printer className="w-3 h-3" /> Print
-                              </button>
-                            </div>
-                          </div>
+                        {patientHistory.map((visit) => (
+                          <VisitCard
+                            key={visit.id}
+                            visit={visit}
+                            bill={historyBillMap[`${visit.id}_${visit.visitDate}`]}
+                            onSelect={prefillFromPatient}
+                            onPrint={printPatientPrescription}
+                          />
                         ))}
                       </div>
                     </>
