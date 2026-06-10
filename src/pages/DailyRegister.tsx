@@ -24,7 +24,7 @@ import { exportToExcel, parseExcelFile } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
-import { deletePatientBill, getPatientBillsByDate } from "@/lib/inventory";
+import { deletePatientBill } from "@/lib/inventory";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
 import { getSettings } from "@/lib/settings";
 
@@ -72,16 +72,9 @@ export default function DailyRegister() {
     return filterType === "doc1" ? docId === 1 : docId === 2;
   });
 
-  // Bill lookup: patientId → bill
-  const billsByPatientId = Object.fromEntries(
-    getPatientBillsByDate(selectedDate).map(b => [b.patientId, b])
-  );
-
-  // Collection for the active tab (fees + medicine sale + other charges per patient)
-  const filteredCollection = filteredPatients.reduce((s, p) => {
-    const bill = billsByPatientId[p.id];
-    return s + (p.fees || 0) + (bill?.totalSale ?? 0) + (bill?.otherCharges ?? 0);
-  }, 0) + (filterType === "all" ? looseDayTotal : 0);
+  // Collection for the active tab — fees only (patient.fees is the stored total)
+  const filteredCollection = filteredPatients.reduce((s, p) => s + (p.fees || 0), 0)
+    + (filterType === "all" ? looseDayTotal : 0);
 
   const monthlyStats = showMonthly ? getMonthlyStats(monthlyYear, monthlyMonth) : null;
 
@@ -334,13 +327,9 @@ Thank you everyone for your trust 🙏
                           ? <span className="text-xs font-bold px-2 py-1 rounded-md bg-emerald-100 text-emerald-700">Ayurvedic</span>
                           : <span className="text-xs font-bold px-2 py-1 rounded-md bg-blue-100 text-blue-700">General</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">{
-                        (() => {
-                          const bill = billsByPatientId[p.id];
-                          const total = (p.fees || 0) + (bill?.totalSale ?? 0) + (bill?.otherCharges ?? 0);
-                          return total ? `₹${total}` : "-";
-                        })()
-                      }</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">
+                        {p.fees ? `₹${p.fees}` : "-"}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => { setPrintPatient(p); setTimeout(() => printPatientPrescription(p), 50); }}

@@ -548,6 +548,8 @@ export default function Home() {
       form.setValue("mobile", result.latestInfo.mobile);
       setHistoryName(name);
       setHistoryMobile(result.latestInfo.mobile);
+      const pendingMatch = getPendingFees().find(e => e.mobile.replace(/\D/g, "") === result.latestInfo!.mobile.replace(/\D/g, ""));
+      if (pendingMatch) setPendingAlert(pendingMatch);
       toast({ title: "Patient found", description: `${result.history.length} visit(s) found.` });
     } else {
       setHistoryName(name);
@@ -575,6 +577,8 @@ export default function Home() {
     setHistoryName(s.name);
     setHistoryMobile(s.mobile);
     setFilterMode("history");
+    const pendingMatch = getPendingFees().find(e => e.mobile.replace(/\D/g, "") === s.mobile.replace(/\D/g, ""));
+    if (pendingMatch) setPendingAlert(pendingMatch);
     toast({ title: "Patient found", description: `${s.visitCount} visit(s) found.` });
   }, [form, toast]);
 
@@ -625,6 +629,8 @@ export default function Home() {
       setPatientHistory(result.history);
       setHistoryName(row.name);
       setHistoryMobile(row.mobile);
+      const pendingMatch = getPendingFees().find(e => e.mobile.replace(/\D/g, "") === row.mobile.replace(/\D/g, ""));
+      if (pendingMatch) setPendingAlert(pendingMatch);
     }
     toast({ title: "Patient filled!", description: `Details loaded for ${row.name}` });
   };
@@ -1615,7 +1621,7 @@ export default function Home() {
 
         {/* ── SIDEBAR ── */}
         <div className="lg:col-span-4">
-          <div className="sticky top-24 space-y-4">
+          <div className="sticky top-24 space-y-4 overflow-y-auto max-h-[calc(100vh-7rem)] pr-0.5">
             {/* Filter Mode Selector */}
             <div className="medical-card p-3">
               <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
