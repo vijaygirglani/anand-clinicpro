@@ -18,11 +18,24 @@ import {
   MessageCircle} from "lucide-react";
 
 // ── Pending Fees helpers ──────────────────────────────────────────────
-const PENDING_KEY = "manglam_pending_fees";
-interface PendingEntry { patientId: number; name: string; mobile: string; fees: number; date: string; markedAt: string; }
+const PENDING_KEY = "cp_pending_fees";
+interface PendingEntry {
+  id: string;           // UUID — primary key for removal
+  patientId: number;
+  patientName: string;
+  patientMobile: string;
+  amount: number;       // the PENDING (unpaid) portion
+  date: string;         // visit date (yyyy-MM-dd)
+  billDate: string;
+  markedAt: string;
+}
 function getPendingFees(): PendingEntry[] { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); } catch { return []; } }
-function addPendingFee(e: PendingEntry) { const l = getPendingFees().filter(x => x.patientId !== e.patientId); l.push(e); localStorage.setItem(PENDING_KEY, JSON.stringify(l)); }
-function removePendingFee(id: number) { localStorage.setItem(PENDING_KEY, JSON.stringify(getPendingFees().filter(e => e.patientId !== id))); }
+/** One pending entry per mobile — replacing any prior entry for the same patient */
+function addPendingFee(e: PendingEntry) {
+  const rest = getPendingFees().filter(x => x.patientMobile.replace(/\D/g,"") !== e.patientMobile.replace(/\D/g,""));
+  localStorage.setItem(PENDING_KEY, JSON.stringify([...rest, e]));
+}
+function removePendingFee(id: string) { localStorage.setItem(PENDING_KEY, JSON.stringify(getPendingFees().filter(e => e.id !== id))); }
 import { useToast } from "@/hooks/use-toast";
 import { getActiveDoctor } from "@/lib/settings";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
@@ -591,7 +604,7 @@ export default function Home() {
       form.setValue("address", result.latestInfo.address || "");
       setHistoryName(result.latestInfo.name);
       setHistoryMobile(mobile);
-      const pendingMatch = getPendingFees().find(e => e.mobile.replace(/\D/g, "") === mobile.replace(/\D/g, ""));
+      const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === mobile.replace(/\D/g, ""));
       if (pendingMatch) setPendingAlert(pendingMatch);
       toast({ title: "Patient found", description: `${result.history.length} visit(s) found.` });
     } else {
@@ -619,7 +632,7 @@ export default function Home() {
       form.setValue("mobile", result.latestInfo.mobile);
       setHistoryName(name);
       setHistoryMobile(result.latestInfo.mobile);
-      const pendingMatch = getPendingFees().find(e => e.mobile.replace(/\D/g, "") === result.latestInfo!.mobile.replace(/\D/g, ""));
+      const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === result.latestInfo!.mobile.replace(/\D/g, ""));
       if (pendingMatch) setPendingAlert(pendingMatch);
       toast({ title: "Patient found", description: `${result.history.length} visit(s) found.` });
     } else {
@@ -648,7 +661,7 @@ export default function Home() {
     setHistoryName(s.name);
     setHistoryMobile(s.mobile);
     setFilterMode("history");
-    const pendingMatch = getPendingFees().find(e => e.mobile.replace(/\D/g, "") === s.mobile.replace(/\D/g, ""));
+    const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === s.mobile.replace(/\D/g, ""));
     if (pendingMatch) setPendingAlert(pendingMatch);
     toast({ title: "Patient found", description: `${s.visitCount} visit(s) found.` });
   }, [form, toast]);
@@ -700,7 +713,7 @@ export default function Home() {
       setPatientHistory(result.history);
       setHistoryName(row.name);
       setHistoryMobile(row.mobile);
-      const pendingMatch = getPendingFees().find(e => e.mobile.replace(/\D/g, "") === row.mobile.replace(/\D/g, ""));
+      const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === row.mobile.replace(/\D/g, ""));
       if (pendingMatch) setPendingAlert(pendingMatch);
     }
     toast({ title: "Patient filled!", description: `Details loaded for ${row.name}` });
@@ -847,11 +860,25 @@ export default function Home() {
       savePatientBill(patientBill);
     }
 
-    if (feesMarkedPending && saved.fees > 0) {
-      const pendingVal = pendingAmount.trim() !== "" ? Number(pendingAmount) : saved.fees;
-      const finalPending = (!isNaN(pendingVal) && pendingVal > 0 && pendingVal <= saved.fees) ? pendingVal : saved.fees;
-      addPendingFee({ patientId: saved.id, name: saved.name, mobile: saved.mobile, fees: finalPending, date: visitDate, markedAt: new Date().toISOString() });
-      refreshPending();
+    if (feesMarkedPending) {
+      // billTotal = medicine bill when present, otherwise consultation fee
+      const hasMeds = medRowsRef.current.some(r => r.medicineName.trim());
+      const billTotal = hasMeds ? billAmount : finalFees;
+      const paid = pendingAmount.trim() !== "" ? Math.max(0, Number(pendingAmount) || 0) : 0;
+      const pendingAmt = Math.round(billTotal - paid);
+      if (pendingAmt > 0) {
+        addPendingFee({
+          id: crypto.randomUUID(),
+          patientId: saved.id,
+          patientName: saved.name,
+          patientMobile: saved.mobile,
+          amount: pendingAmt,
+          date: visitDate,
+          billDate: visitDate,
+          markedAt: new Date().toISOString(),
+        });
+        refreshPending();
+      }
     }
     setFeesMarkedPending(false);
     setPendingAmount("");
@@ -1162,36 +1189,43 @@ export default function Home() {
                         {feesMarkedPending ? "Pending" : "Mark Pending"}
                       </button>
                     </div>
-                    {feesMarkedPending && (
-                      <div className="mt-2 space-y-2">
-                        <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                          <Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          <div className="flex-1">
-                            <p className="text-xs font-bold text-amber-700 mb-1">How much is pending? (&#8377;)</p>
-                            <input
-                              type="number" min={0}
-                              value={pendingAmount}
-                              onChange={e => setPendingAmount(e.target.value)}
-                              placeholder={`Leave blank = full &#8377;${form.watch("fees") || 0}`}
-                              className="w-full px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-sm font-bold text-amber-800 focus:outline-none focus:border-amber-500 placeholder:text-amber-300 placeholder:font-normal"
-                            />
+                    {feesMarkedPending && (() => {
+                      const hasMeds = medRows.some(r => r.medicineName.trim());
+                      const billTotal = hasMeds ? billAmount : (Number(form.watch("fees")) || 0);
+                      const paid = pendingAmount.trim() !== "" ? Math.max(0, Number(pendingAmount) || 0) : 0;
+                      const pendingAmt = Math.round(billTotal - paid);
+                      return (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                            <Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-xs font-bold text-amber-700 mb-1">
+                                Amount Paid Now (&#8377;) — Bill Total: &#8377;{billTotal}
+                              </p>
+                              <input
+                                type="number" min={0}
+                                value={pendingAmount}
+                                onChange={e => setPendingAmount(e.target.value)}
+                                placeholder="0 — leave blank if nothing paid"
+                                className="w-full px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-sm font-bold text-amber-800 focus:outline-none focus:border-amber-500 placeholder:text-amber-300 placeholder:font-normal"
+                              />
+                            </div>
                           </div>
-                        </div>
-                        {pendingAmount.trim() !== "" && Number(pendingAmount) > 0 ? (
                           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs">
                             <span className="flex items-center gap-1 text-emerald-600 font-bold">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> Paid: &#8377;{Math.max(0, Number(form.watch("fees") || 0) - Number(pendingAmount))}
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Paid: &#8377;{paid}
                             </span>
                             <span className="text-slate-300">|</span>
-                            <span className="flex items-center gap-1 text-amber-600 font-bold">
-                              <Hourglass className="w-3.5 h-3.5" /> Pending: &#8377;{Number(pendingAmount)}
+                            <span className={`flex items-center gap-1 font-bold ${pendingAmt > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                              <Hourglass className="w-3.5 h-3.5" /> Pending: &#8377;{Math.max(0, pendingAmt)}
                             </span>
                           </div>
-                        ) : (
-                          <p className="text-xs text-amber-500 px-1">Leave blank &#8594; full amount marked pending</p>
-                        )}
-                      </div>
-                    )}
+                          {pendingAmt <= 0 && paid > 0 && (
+                            <p className="text-xs text-emerald-600 px-1 font-semibold">✓ Fully paid — nothing will be saved as pending</p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1831,7 +1865,7 @@ export default function Home() {
                 </div>
                 {pendingFees.length > 0 && (
                   <span className="text-xs font-bold text-amber-700">
-                    Total: ₹{pendingFees.reduce((s, e) => s + e.fees, 0)}
+                    Total: ₹{pendingFees.reduce((s, e) => s + e.amount, 0)}
                   </span>
                 )}
               </div>
@@ -1839,21 +1873,21 @@ export default function Home() {
                 <div className="px-4 py-6 text-center text-slate-400">
                   <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-300" />
                   <p className="text-xs font-medium">No pending fees</p>
-                  <p className="text-xs mt-1 text-slate-300">Use "Mark Pending" in the fees field</p>
+                  <p className="text-xs mt-1 text-slate-300">Use "Mark Pending" when saving a patient</p>
                 </div>
               ) : (
                 <div className="divide-y divide-amber-50 max-h-64 overflow-y-auto">
                   {pendingFees.map((e, i) => (
-                    <div key={e.patientId} className="flex items-center gap-2 px-3 py-2.5 hover:bg-amber-50/50 transition-colors">
+                    <div key={e.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-amber-50/50 transition-colors">
                       <span className="text-xs text-slate-400 w-4 shrink-0">{i + 1}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-xs text-slate-900 truncate">{e.name}</p>
-                        <p className="text-[10px] font-mono text-slate-400">{e.mobile} · {format(new Date(e.date + "T00:00:00"), "dd MMM")}</p>
+                        <p className="font-bold text-xs text-slate-900 truncate">{e.patientName}</p>
+                        <p className="text-[10px] font-mono text-slate-400">{e.patientMobile} · {format(new Date(e.date + "T00:00:00"), "dd MMM")}</p>
                       </div>
-                      <span className="font-bold text-amber-600 text-sm shrink-0">₹{e.fees}</span>
+                      <span className="font-bold text-amber-600 text-sm shrink-0">₹{e.amount}</span>
                       <button
-                        onClick={() => { removePendingFee(e.patientId); refreshPending(); toast({ title: "Marked as Paid", description: `${e.name}'s fees cleared.` }); }}
-                        title="Mark as paid"
+                        onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Collected", description: `₹${e.amount} from ${e.patientName} marked as collected.` }); }}
+                        title="Mark as collected"
                         className="shrink-0 p-1.5 rounded-lg bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition-colors">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                       </button>
@@ -1861,7 +1895,7 @@ export default function Home() {
                   ))}
                   <div className="px-3 py-2 bg-amber-50 flex justify-between items-center">
                     <span className="text-xs font-bold text-slate-600">Total Pending</span>
-                    <span className="font-bold text-amber-600">₹{pendingFees.reduce((s, e) => s + e.fees, 0)}</span>
+                    <span className="font-bold text-amber-600">₹{pendingFees.reduce((s, e) => s + e.amount, 0)}</span>
                   </div>
                 </div>
               )}
@@ -1991,11 +2025,11 @@ export default function Home() {
               <div className="px-6 py-5">
                 <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-50 border border-amber-200">
                   <div>
-                    <p className="font-black text-slate-900 text-base">{pendingAlert.name}</p>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">{pendingAlert.mobile}</p>
+                    <p className="font-black text-slate-900 text-base">{pendingAlert.patientName}</p>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">{pendingAlert.patientMobile}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-black text-amber-600">&#8377;{pendingAlert.fees}</p>
+                    <p className="text-2xl font-black text-amber-600">&#8377;{pendingAlert.amount}</p>
                     <p className="text-xs text-slate-400">since {new Date(pendingAlert.date + "T00:00:00").toLocaleDateString("en-IN", { day:"numeric", month:"short" })}</p>
                   </div>
                 </div>
@@ -2006,7 +2040,7 @@ export default function Home() {
                   Remind Later
                 </button>
                 <button
-                  onClick={() => { removePendingFee(pendingAlert.patientId); refreshPending(); setPendingAlert(null); toast({ title: "&#10003; Fees Cleared", description: `${pendingAlert.name}'s pending fees marked as paid.` }); }}
+                  onClick={() => { removePendingFee(pendingAlert.id); refreshPending(); setPendingAlert(null); toast({ title: "✓ Fees Collected", description: `₹${pendingAlert.amount} from ${pendingAlert.patientName} marked as collected.` }); }}
                   className="flex-[2] py-3 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2 shadow-lg"
                   style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
                   <CheckCircle2 className="w-4 h-4" /> Mark as Paid
@@ -2030,7 +2064,7 @@ export default function Home() {
                 <WalletCards className="w-5 h-5 text-amber-500" />
                 <h3 className="font-black text-slate-900 text-base">Pending Fees</h3>
                 {pendingFees.length > 0 && <span className="text-xs font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">{pendingFees.length}</span>}
-                <span className="ml-auto font-bold text-amber-700 text-sm">Total: &#8377;{pendingFees.reduce((s,e) => s+e.fees, 0)}</span>
+                <span className="ml-auto font-bold text-amber-700 text-sm">Total: &#8377;{pendingFees.reduce((s,e) => s+e.amount, 0)}</span>
                 <button onClick={() => setShowPendingModal(false)} className="text-slate-400 hover:text-slate-600 ml-2"><X className="w-5 h-5" /></button>
               </div>
               {pendingFees.length === 0 ? (
@@ -2041,22 +2075,22 @@ export default function Home() {
               ) : (
                 <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
                   {pendingFees.map((e, i) => (
-                    <div key={e.patientId} className="flex items-center gap-3 px-5 py-3 hover:bg-amber-50/50 transition-colors">
+                    <div key={e.id} className="flex items-center gap-3 px-5 py-3 hover:bg-amber-50/50 transition-colors">
                       <span className="text-xs text-slate-400 w-5 shrink-0 font-bold">{i+1}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-slate-900 truncate">{e.name}</p>
-                        <p className="text-[11px] font-mono text-slate-400">{e.mobile} &middot; {new Date(e.date+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
+                        <p className="font-bold text-sm text-slate-900 truncate">{e.patientName}</p>
+                        <p className="text-[11px] font-mono text-slate-400">{e.patientMobile} &middot; {new Date(e.date+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
                       </div>
-                      <span className="font-black text-amber-600 text-base shrink-0">&#8377;{e.fees}</span>
-                      <button onClick={() => { removePendingFee(e.patientId); refreshPending(); toast({ title: "Paid", description: `${e.name} cleared.` }); }}
+                      <span className="font-black text-amber-600 text-base shrink-0">&#8377;{e.amount}</span>
+                      <button onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Collected", description: `₹${e.amount} from ${e.patientName} cleared.` }); }}
                         className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors text-xs font-bold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Paid
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Collected
                       </button>
                     </div>
                   ))}
                   <div className="px-5 py-3 bg-amber-50 flex justify-between items-center">
                     <span className="text-sm font-bold text-slate-600">Total Pending</span>
-                    <span className="font-black text-amber-600 text-lg">&#8377;{pendingFees.reduce((s,e) => s+e.fees, 0)}</span>
+                    <span className="font-black text-amber-600 text-lg">&#8377;{pendingFees.reduce((s,e) => s+e.amount, 0)}</span>
                   </div>
                 </div>
               )}

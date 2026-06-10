@@ -112,12 +112,24 @@ Opp. Krishna Hotel, Pipaliya Char Rasta, Morbi`,
 ];
 
 // ── Pending Fees helpers ──────────────────────────────────────────────
-const PENDING_KEY = "manglam_pending_fees";
-interface PendingEntry { patientId: number; name: string; mobile: string; fees: number; date: string; markedAt: string; }
+const PENDING_KEY = "cp_pending_fees";
+interface PendingEntry {
+  id: string;
+  patientId: number;
+  patientName: string;
+  patientMobile: string;
+  amount: number;
+  date: string;
+  billDate: string;
+  markedAt: string;
+}
 function getPendingFees(): PendingEntry[] { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); } catch { return []; } }
-function addPendingFee(entry: PendingEntry) { const list = getPendingFees().filter(e => e.patientId !== entry.patientId); list.push(entry); localStorage.setItem(PENDING_KEY, JSON.stringify(list)); }
-function removePendingFee(patientId: number) { const list = getPendingFees().filter(e => e.patientId !== patientId); localStorage.setItem(PENDING_KEY, JSON.stringify(list)); }
-function isPending(patientId: number): boolean { return getPendingFees().some(e => e.patientId === patientId); }
+function addPendingFee(entry: PendingEntry) {
+  const rest = getPendingFees().filter(e => e.patientMobile.replace(/\D/g,"") !== entry.patientMobile.replace(/\D/g,""));
+  localStorage.setItem(PENDING_KEY, JSON.stringify([...rest, entry]));
+}
+function removePendingFee(id: string) { localStorage.setItem(PENDING_KEY, JSON.stringify(getPendingFees().filter(e => e.id !== id))); }
+function getPendingEntry(mobile: string): PendingEntry | undefined { return getPendingFees().find(e => e.patientMobile.replace(/\D/g,"") === mobile.replace(/\D/g,"")); }
 import { exportToExcel } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -209,11 +221,12 @@ export default function AyurvedicRegister() {
   };
 
   const handleTogglePending = (p: Patient) => {
-    if (isPending(p.id)) {
-      removePendingFee(p.id);
-      toast({ title: "Marked as Paid", description: `${p.name}'s fees cleared from pending.` });
+    const existing = getPendingEntry(p.mobile);
+    if (existing) {
+      removePendingFee(existing.id);
+      toast({ title: "Collected", description: `₹${existing.amount} from ${p.name} cleared.` });
     } else {
-      addPendingFee({ patientId: p.id, name: p.name, mobile: p.mobile, fees: p.fees || 0, date: p.visitDate, markedAt: new Date().toISOString() });
+      addPendingFee({ id: crypto.randomUUID(), patientId: p.id, patientName: p.name, patientMobile: p.mobile, amount: p.fees || 0, date: p.visitDate, billDate: p.visitDate, markedAt: new Date().toISOString() });
       toast({ title: "Marked as Pending", description: `₹${p.fees || 0} pending for ${p.name}.` });
     }
     refreshPending();
@@ -339,23 +352,23 @@ export default function AyurvedicRegister() {
                       </td>
                       <td className="px-4 py-3 max-w-[160px] truncate text-slate-600">{p.treatment || "-"}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-bold ${isPending(p.id) ? "text-amber-500" : "text-slate-900"}`}>
+                        <span className={`font-bold ${getPendingEntry(p.mobile) ? "text-amber-500" : "text-slate-900"}`}>
                           {p.fees ? `₹${p.fees}` : "-"}
                         </span>
-                        {isPending(p.id) && (
+                        {getPendingEntry(p.mobile) && (
                           <span className="ml-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">PENDING</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => handleTogglePending(p)}
-                          title={isPending(p.id) ? "Mark as Paid" : "Mark as Pending"}
+                          title={getPendingEntry(p.mobile) ? "Mark as Collected" : "Mark as Pending"}
                           className={`p-1.5 rounded-lg transition-colors ${
-                            isPending(p.id)
+                            getPendingEntry(p.mobile)
                               ? "bg-amber-100 text-amber-600 hover:bg-green-100 hover:text-green-600"
                               : "text-slate-300 hover:bg-amber-50 hover:text-amber-500"
                           }`}>
-                          {isPending(p.id)
+                          {getPendingEntry(p.mobile)
                             ? <Hourglass className="w-4 h-4" />
                             : <Hourglass className="w-4 h-4" />}
                         </button>
@@ -411,7 +424,7 @@ export default function AyurvedicRegister() {
               )}
               {pendingFees.length > 0 && (
                 <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
-                  Total: ₹{pendingFees.reduce((s, e) => s + e.fees, 0)}
+                  Total: ₹{pendingFees.reduce((s, e) => s + e.amount, 0)}
                 </span>
               )}
             </div>
@@ -438,21 +451,21 @@ export default function AyurvedicRegister() {
                   </thead>
                   <tbody className="divide-y divide-amber-50">
                     {pendingFees.map((e, i) => (
-                      <tr key={e.patientId} className="hover:bg-amber-50/40 transition-colors">
+                      <tr key={e.id} className="hover:bg-amber-50/40 transition-colors">
                         <td className="px-4 py-3 text-slate-400 font-medium">{i + 1}</td>
                         <td className="px-4 py-3">
-                          <p className="font-bold text-slate-900">{e.name}</p>
-                          <p className="text-xs font-mono text-slate-400">{e.mobile}</p>
+                          <p className="font-bold text-slate-900">{e.patientName}</p>
+                          <p className="text-xs font-mono text-slate-400">{e.patientMobile}</p>
                         </td>
                         <td className="px-4 py-3 text-slate-600 text-xs">
                           {format(new Date(e.date + "T00:00:00"), "dd MMM yyyy")}
                         </td>
-                        <td className="px-4 py-3 text-right font-bold text-amber-600 text-base">₹{e.fees}</td>
+                        <td className="px-4 py-3 text-right font-bold text-amber-600 text-base">₹{e.amount}</td>
                         <td className="px-4 py-3 text-center">
                           <button
-                            onClick={() => { removePendingFee(e.patientId); refreshPending(); toast({ title: "Marked as Paid", description: `${e.name}'s fees cleared.` }); }}
+                            onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Collected", description: `₹${e.amount} from ${e.patientName} cleared.` }); }}
                             className="flex items-center gap-1.5 mx-auto px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 font-semibold text-xs hover:bg-emerald-200 transition-colors border border-emerald-200">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Paid
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Collected
                           </button>
                         </td>
                       </tr>
@@ -462,7 +475,7 @@ export default function AyurvedicRegister() {
                     <tr>
                       <td colSpan={3} className="px-4 py-3 font-bold text-slate-700">Total Pending</td>
                       <td className="px-4 py-3 text-right font-bold text-amber-600 text-base">
-                        ₹{pendingFees.reduce((s, e) => s + e.fees, 0)}
+                        ₹{pendingFees.reduce((s, e) => s + e.amount, 0)}
                       </td>
                       <td />
                     </tr>
