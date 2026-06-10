@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Layout } from "@/components/Layout";
 import {
@@ -36,31 +36,34 @@ export default function StockStatus() {
   const refresh = () => setAllBatches(getAllBatchStocks());
 
   // Counts for filter cards (always from full dataset)
-  const activeBatches  = allBatches.filter(b => !b.discontinued);
-  const inStockCount   = allBatches.filter(b => b.tabletsAvailable > 0).length;
-  // EXPIRED = physically expired AND still has stock on shelf
-  const expiredCount   = allBatches.filter(b => b.daysToExpiry < 0 && b.tabletsAvailable > 0).length;
-  // OUT OF STOCK = zero stock, regardless of expiry date
-  const outCount       = allBatches.filter(b => b.tabletsAvailable <= 0).length;
-  const lowCount       = activeBatches.filter(b => b.tabletsAvailable > 0 && b.tabletsAvailable <= b.reorderLevel && b.daysToExpiry >= 0).length;
-  const expiryCount    = activeBatches.filter(b => b.daysToExpiry > 0 && b.daysToExpiry <= 180).length;
-  // Compute valuation from allBatches state — same source as the rest of the UI
-  const stockValueAtCost = Math.round(
-    allBatches.filter(b => b.tabletsAvailable > 0)
-      .reduce((s, b) => s + b.tabletsAvailable * b.landingCostPerTablet, 0)
-  );
+  const {
+    activeBatches, inStockCount, expiredCount, outCount, lowCount, expiryCount, stockValueAtCost,
+  } = useMemo(() => {
+    const active = allBatches.filter(b => !b.discontinued);
+    return {
+      activeBatches: active,
+      inStockCount:   allBatches.filter(b => b.tabletsAvailable > 0).length,
+      expiredCount:   allBatches.filter(b => b.daysToExpiry < 0 && b.tabletsAvailable > 0).length,
+      outCount:       allBatches.filter(b => b.tabletsAvailable <= 0).length,
+      lowCount:       active.filter(b => b.tabletsAvailable > 0 && b.tabletsAvailable <= b.reorderLevel && b.daysToExpiry >= 0).length,
+      expiryCount:    active.filter(b => b.daysToExpiry > 0 && b.daysToExpiry <= 180).length,
+      stockValueAtCost: Math.round(
+        allBatches.filter(b => b.tabletsAvailable > 0)
+          .reduce((s, b) => s + b.tabletsAvailable * b.landingCostPerTablet, 0)
+      ),
+    };
+  }, [allBatches]);
 
   // Filtered list — this is what the table renders
-  const filteredMedicines: BatchStock[] =
-    activeFilter === "out"       ? allBatches.filter(b => b.tabletsAvailable <= 0)
-    : activeFilter === "expired" ? allBatches.filter(b => b.daysToExpiry < 0 && b.tabletsAvailable > 0)
-    : activeFilter === "low"     ? activeBatches.filter(b => b.tabletsAvailable > 0 && b.tabletsAvailable <= b.reorderLevel && b.daysToExpiry >= 0)
-    : activeFilter === "expiry"  ? activeBatches.filter(b => b.daysToExpiry > 0 && b.daysToExpiry <= 180)
-    : allBatches.filter(b => b.tabletsAvailable > 0);
+  const filteredMedicines = useMemo((): BatchStock[] => {
+    if (activeFilter === "out")     return allBatches.filter(b => b.tabletsAvailable <= 0);
+    if (activeFilter === "expired") return allBatches.filter(b => b.daysToExpiry < 0 && b.tabletsAvailable > 0);
+    if (activeFilter === "low")     return activeBatches.filter(b => b.tabletsAvailable > 0 && b.tabletsAvailable <= b.reorderLevel && b.daysToExpiry >= 0);
+    if (activeFilter === "expiry")  return activeBatches.filter(b => b.daysToExpiry > 0 && b.daysToExpiry <= 180);
+    return allBatches.filter(b => b.tabletsAvailable > 0);
+  }, [activeFilter, allBatches, activeBatches]);
 
-  const toggleFilter = (f: FilterKey) => {
-    setActiveFilter(prev => prev === f ? null : f);
-  };
+  const toggleFilter = useCallback((f: FilterKey) => { setActiveFilter(prev => prev === f ? null : f); }, []);
 
   const handleDiscontinue = (billId: string, batchNo: string, medicineName: string) => {
     if (!confirm(`Mark ${medicineName} (Batch: ${batchNo}) as discontinued? It will be hidden from patient prescriptions.`)) return;
@@ -122,8 +125,13 @@ export default function StockStatus() {
     return <span className="inline-block whitespace-nowrap min-w-[90px] text-center text-xs font-bold text-green-600 bg-green-100 border border-green-300 px-2.5 py-1 rounded-full">In Stock</span>;
   };
 
-  const adjQtyNum = Number(adjQtyStr);
-  const newStock = adjBatch ? adjBatch.tabletsAvailable + (isNaN(adjQtyNum) ? 0 : adjQtyNum) : 0;
+  const { adjQtyNum, newStock } = useMemo(() => {
+    const num = Number(adjQtyStr);
+    return {
+      adjQtyNum: num,
+      newStock: adjBatch ? adjBatch.tabletsAvailable + (isNaN(num) ? 0 : num) : 0,
+    };
+  }, [adjQtyStr, adjBatch]);
 
   return (
     <>

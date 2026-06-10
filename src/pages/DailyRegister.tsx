@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
@@ -50,7 +50,7 @@ export default function DailyRegister() {
 
   // Loose sales for selected date
   const [looseSalesForDay, setLooseSalesForDay] = useState<LooseSaleEntry[]>(() => getLooseSalesForDate(format(new Date(), "yyyy-MM-dd")));
-  const looseDayTotal = looseSalesForDay.reduce((s, e) => s + e.amount, 0);
+  const looseDayTotal = useMemo(() => looseSalesForDay.reduce((s, e) => s + e.amount, 0), [looseSalesForDay]);
 
   const refresh = useCallback(() => {
     setStats(getDailyStats(selectedDate));
@@ -58,23 +58,29 @@ export default function DailyRegister() {
     setLooseSalesForDay(getLooseSalesForDate(selectedDate));
   }, [selectedDate]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); }, [selectedDate]); // depend on selectedDate directly to avoid stale closure
 
   const settings = getSettings();
   const doc1Name = settings.doctor1Name || "Doctor 1";
   const doc2Name = settings.doctor2Name || "Doctor 2";
 
   const allPatients = stats?.patients || [];
-  const filteredPatients = allPatients.filter(p => {
-    if (filterType === "all") return true;
-    // patients without doctorId default to doctor 1 (matches store.ts logic)
-    const docId = p.doctorId ?? 1;
-    return filterType === "doc1" ? docId === 1 : docId === 2;
-  });
+  const filteredPatients = useMemo(() =>
+    allPatients.filter(p => {
+      if (filterType === "all") return true;
+      // patients without doctorId default to doctor 1 (matches store.ts logic)
+      const docId = p.doctorId ?? 1;
+      return filterType === "doc1" ? docId === 1 : docId === 2;
+    }),
+    [allPatients, filterType]
+  );
 
   // Collection for the active tab — fees only (patient.fees is the stored total)
-  const filteredCollection = filteredPatients.reduce((s, p) => s + (p.fees || 0), 0)
-    + (filterType === "all" ? looseDayTotal : 0);
+  const filteredCollection = useMemo(() =>
+    filteredPatients.reduce((s, p) => s + (p.fees || 0), 0)
+      + (filterType === "all" ? looseDayTotal : 0),
+    [filteredPatients, filterType, looseDayTotal]
+  );
 
   const monthlyStats = showMonthly ? getMonthlyStats(monthlyYear, monthlyMonth) : null;
 
@@ -172,7 +178,7 @@ export default function DailyRegister() {
     toast({ title: "Monthly Report Exported" });
   };
 
-  const buildDailyReportMsg = () => {
+  const buildDailyReportMsg = useCallback(() => {
     const generalCount = (stats?.patients || []).filter(p => p.registerType !== "ayurvedic").length;
     const ayurvedicCount = (stats?.patients || []).filter(p => p.registerType === "ayurvedic").length;
     const generalFees = (stats?.patients || []).filter(p => p.registerType !== "ayurvedic").reduce((s, p) => s + (p.fees || 0), 0);
@@ -197,7 +203,7 @@ export default function DailyRegister() {
 Thank you everyone for your trust 🙏
 *Dr. Vijay Girglani*
 📍 Manglam Hospital, Morbi`;
-  };
+  }, [stats, looseDayTotal, looseSalesForDay, waCustomNote, selectedDate]);
 
   const handleSendDailyReport = () => {
     const msg = buildDailyReportMsg();
