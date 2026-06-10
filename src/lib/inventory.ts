@@ -58,8 +58,9 @@ export interface BatchStock {
   landingCostPerTablet: number;
   totalTabletsReceived: number;
   tabletsUsed: number;      // from patient prescriptions
-  tabletsAvailable: number; // totalTabletsReceived - tabletsUsed
+  tabletsAvailable: number; // totalTabletsReceived - tabletsUsed + adjustments
   discontinued: boolean;
+  adjustedOut: boolean;     // discontinued via admin "Remove from Stock" action
   daysToExpiry: number;
   expiryStatus: "expired" | "critical" | "soon" | "watch" | "good";
   stockStatus: "out" | "low" | "ok";
@@ -336,6 +337,7 @@ function getExpiryStatus(days: number): BatchStock["expiryStatus"] {
 // Get ALL batch stocks (live calculation)
 export function getAllBatchStocks(): BatchStock[] {
   const bills = getPurchaseBills();
+  const adjustments = getStockAdjustments();
   const result: BatchStock[] = [];
   const REORDER_LEVEL = 10; // default reorder level in tablets
 
@@ -359,6 +361,11 @@ export function getAllBatchStocks(): BatchStock[] {
       const tabletsUsed = getTabletsUsedForBatch(bill.id, item.batchNo, item.medicineName);
       const tabletsAvailable = Math.max(0, item.totalTabletsReceived - tabletsUsed);
       const daysToExpiry = calcDaysToExpiry(item.expiryDate);
+      const adjustedOut = adjustments.some(
+        a => a.billId === bill.id && a.batchNo === item.batchNo &&
+             a.medicineName.toLowerCase() === item.medicineName.toLowerCase() &&
+             a.reason === "Adjusted Out"
+      );
 
       result.push({
         billId: bill.id,
@@ -373,10 +380,11 @@ export function getAllBatchStocks(): BatchStock[] {
         tabletsUsed,
         tabletsAvailable,
         discontinued: item.discontinued || false,
+        adjustedOut,
         daysToExpiry,
         expiryStatus: getExpiryStatus(daysToExpiry),
-        stockStatus: item.alertDismissed ? "ok" : 
-                     tabletsAvailable <= 0 ? "out" : 
+        stockStatus: item.alertDismissed ? "ok" :
+                     tabletsAvailable <= 0 ? "out" :
                      tabletsAvailable <= (item.reorderLevel ?? REORDER_LEVEL) ? "low" : "ok",
         reorderLevel: item.reorderLevel ?? REORDER_LEVEL,
         alertDismissed: item.alertDismissed || false,
