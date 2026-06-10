@@ -288,9 +288,10 @@ function getTabletsUsedForBatch(billId: string, batchNo: string, medicineName: s
       .reduce((s, i) => s + i.qtyTablets, 0);
   }, 0);
 
-  // Apply stock adjustments
+  // Apply stock adjustments — normalize batchNo to "" to avoid undefined vs "" mismatch
+  const normBatch = batchNo ?? "";
   const adjTotal = adjustments
-    .filter(a => a.billId === billId && a.batchNo === batchNo &&
+    .filter(a => a.billId === billId && (a.batchNo ?? "") === normBatch &&
                  a.medicineName.toLowerCase() === medicineName.toLowerCase())
     .reduce((s, a) => s - a.adjustQtyTablets, 0); // negative adjustment = used
 

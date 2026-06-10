@@ -7,10 +7,11 @@ import { format } from "date-fns";
 interface Props {
   patientName: string;
   mobile: string;
+  advice?: string;
   onClose: () => void;
 }
 
-export function WhatsAppModal({ patientName, mobile, onClose }: Props) {
+export function WhatsAppModal({ patientName, mobile, advice, onClose }: Props) {
   const settings = getSettings();
   const doctor = getActiveDoctor();
   const templates = getWATemplates();
@@ -24,6 +25,7 @@ export function WhatsAppModal({ patientName, mobile, onClose }: Props) {
     clinicName: settings.clinicName,
     doctorName: `${doctor?.name || settings.doctor1Name} (${doctor?.designation || settings.doctor1Designation})`,
     date: format(new Date(), "dd/MM/yyyy"),
+    advice: advice || "",
   };
 
   const selected = templates.find(t => t.id === selectedId) || templates[0];

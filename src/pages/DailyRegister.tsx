@@ -10,7 +10,7 @@ import {
 import {
   Calendar, Download, Edit2, Trash2, Users, IndianRupee, FileText,
   ChevronDown, ChevronUp, Printer, Upload, Save, RotateCcw, BarChart2,
-  TrendingUp, Leaf, MessageCircle, Send, X, ShoppingBag,
+  TrendingUp, MessageCircle, Send, X, ShoppingBag,
 } from "lucide-react";
 
 // ── Loose Medicine Sale helpers (mirrors Home.tsx) ────────────────────────────
@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
 import { deletePatientBill, getPatientBillsByDate } from "@/lib/inventory";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
+import { getSettings } from "@/lib/settings";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -33,12 +34,12 @@ export default function DailyRegister() {
   const [, navigate] = useLocation();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [stats, setStats] = useState<DailyStats | null>(null);
-  const [waPatient, setWaPatient] = useState<{name: string; mobile: string} | null>(null);
+  const [waPatient, setWaPatient] = useState<{name: string; mobile: string; advice?: string} | null>(null);
   const [showSummary, setShowSummary] = useState(false);
   const [showMonthly, setShowMonthly] = useState(false);
   const [allDates, setAllDates] = useState<{ date: string; count: number; totalFees: number }[]>([]);
   const [printPatient, setPrintPatient] = useState<Patient | null>(null);
-  const [filterType, setFilterType] = useState<"all" | "general" | "ayurvedic">("all");
+  const [filterType, setFilterType] = useState<"all" | "doc1" | "doc2">("all");
   const [monthlyMonth, setMonthlyMonth] = useState(new Date().getMonth() + 1);
   const [monthlyYear, setMonthlyYear] = useState(new Date().getFullYear());
   const importRef = useRef<HTMLInputElement>(null);
@@ -59,18 +60,28 @@ export default function DailyRegister() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const filteredPatients = (stats?.patients || []).filter(p => {
+  const settings = getSettings();
+  const doc1Name = settings.doctor1Name || "Doctor 1";
+  const doc2Name = settings.doctor2Name || "Doctor 2";
+
+  const allPatients = stats?.patients || [];
+  const filteredPatients = allPatients.filter(p => {
     if (filterType === "all") return true;
-    if (filterType === "general") return p.registerType !== "ayurvedic";
-    return p.registerType === "ayurvedic";
+    // patients without doctorId default to doctor 1 (matches store.ts logic)
+    const docId = p.doctorId ?? 1;
+    return filterType === "doc1" ? docId === 1 : docId === 2;
   });
 
-  // Bill lookup: patientId → bill (for otherCharges display)
+  // Bill lookup: patientId → bill
   const billsByPatientId = Object.fromEntries(
     getPatientBillsByDate(selectedDate).map(b => [b.patientId, b])
   );
-  const dailyOtherChargesTotal = Object.values(billsByPatientId)
-    .reduce((s, b) => s + (b.otherCharges ?? 0), 0);
+
+  // Collection for the active tab (fees + medicine sale + other charges per patient)
+  const filteredCollection = filteredPatients.reduce((s, p) => {
+    const bill = billsByPatientId[p.id];
+    return s + (p.fees || 0) + (bill?.totalSale ?? 0) + (bill?.otherCharges ?? 0);
+  }, 0) + (filterType === "all" ? looseDayTotal : 0);
 
   const monthlyStats = showMonthly ? getMonthlyStats(monthlyYear, monthlyMonth) : null;
 
@@ -217,7 +228,7 @@ Thank you everyone for your trust 🙏
           <div className="flex flex-row flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-xl font-display font-bold text-slate-900">Daily Register</h2>
-              <p className="text-slate-500 text-xs">General + Ayurvedic patients for selected date</p>
+              <p className="text-slate-500 text-xs">All doctors · selected date</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
@@ -246,12 +257,11 @@ Thank you everyone for your trust 🙏
         </div>
 
         {/* ── STATS CARDS ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {[
-            { label: "Total", value: stats?.totalPatients || 0, icon: Users, color: "bg-blue-100 text-primary" },
-            { label: "General", value: (stats?.patients || []).filter(p => p.registerType !== "ayurvedic").length, icon: FileText, color: "bg-slate-100 text-slate-600" },
-            { label: "Ayurvedic", value: (stats?.patients || []).filter(p => p.registerType === "ayurvedic").length, icon: Leaf, color: "bg-emerald-100 text-emerald-600" },
-            { label: "Collection", value: formatCurrency((stats?.totalFees || 0) + dailyOtherChargesTotal + looseDayTotal), icon: IndianRupee, color: "bg-emerald-100 text-emerald-600", sub: looseDayTotal > 0 ? `+₹${looseDayTotal} loose` : undefined },
+            { label: "Total", value: allPatients.length, icon: Users, color: "bg-blue-100 text-primary" },
+            { label: filterType === "doc1" ? doc1Name : filterType === "doc2" ? doc2Name : "Patients", value: filteredPatients.length, icon: FileText, color: "bg-slate-100 text-slate-600" },
+            { label: "Collection", value: formatCurrency(filteredCollection), icon: IndianRupee, color: "bg-emerald-100 text-emerald-600", sub: filterType === "all" && looseDayTotal > 0 ? `+₹${looseDayTotal} loose` : undefined },
           ].map(({ label, value, icon: Icon, color, sub }: any) => (
             <div key={label} className="medical-card p-4 flex items-center gap-3">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
@@ -268,14 +278,18 @@ Thank you everyone for your trust 🙏
 
         {/* ── FILTER TABS ── */}
         <div className="flex items-center gap-2">
-          {(["all", "general", "ayurvedic"] as const).map(type => (
-            <button key={type} onClick={() => setFilterType(type)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all capitalize ${
-                filterType === type
-                  ? type === "ayurvedic" ? "bg-emerald-100 text-emerald-700" : "bg-primary/10 text-primary"
+          {([
+            { key: "all",  label: "All" },
+            { key: "doc1", label: doc1Name },
+            { key: "doc2", label: doc2Name },
+          ] as const).map(({ key, label }) => (
+            <button key={key} onClick={() => setFilterType(key)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                filterType === key
+                  ? "bg-primary/10 text-primary"
                   : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}>
-              {type === "all" ? "All Patients" : type === "general" ? "General" : "Ayurvedic"}
+              {label}
             </button>
           ))}
           <span className="text-sm text-slate-400 ml-2">{filteredPatients.length} patients</span>
@@ -322,7 +336,8 @@ Thank you everyone for your trust 🙏
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-900">{
                         (() => {
-                          const total = (p.fees || 0) + (billsByPatientId[p.id]?.otherCharges ?? 0);
+                          const bill = billsByPatientId[p.id];
+                          const total = (p.fees || 0) + (bill?.totalSale ?? 0) + (bill?.otherCharges ?? 0);
                           return total ? `₹${total}` : "-";
                         })()
                       }</td>
@@ -336,7 +351,7 @@ Thank you everyone for your trust 🙏
                             className="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => setWaPatient({name: p.name, mobile: p.mobile})}
+                          <button onClick={() => setWaPatient({name: p.name, mobile: p.mobile, advice: p.advice || ""})}
                             className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Send WhatsApp">
                             <MessageCircle className="w-4 h-4" />
                           </button>
@@ -584,6 +599,7 @@ Thank you everyone for your trust 🙏
       <WhatsAppModal
         patientName={waPatient.name}
         mobile={waPatient.mobile}
+        advice={waPatient.advice}
         onClose={() => setWaPatient(null)}
       />
     )}

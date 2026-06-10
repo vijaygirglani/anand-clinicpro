@@ -59,6 +59,12 @@ export const DEFAULT_TEMPLATES: WATemplate[] = [
     message: "નમસ્તે {patientName} 🙏\n{clinicName} માં આવવા બદલ ખૂબ ખૂબ આભાર. આપ જલ્દી સ્વસ્થ થાઓ તેવી શુભ કામના.\n\n{doctorName}",
   },
   {
+    id: "thankyou_advice",
+    name: "Thank You + Advice",
+    icon: "💬",
+    message: "નમસ્તે {patientName} 🙏\n{advice}\n{clinicName} માં આવવા બદલ ખૂબ ખૂબ આભાર. આપ જલ્દી સ્વસ્થ થાઓ તેવી શુભ કામના.\n{doctorName}",
+  },
+  {
     id: "custom",
     name: "Custom Message",
     icon: "✏️",
@@ -94,8 +100,16 @@ export function fillTemplate(template: string, vars: {
   clinicName?: string;
   doctorName?: string;
   date?: string;
+  advice?: string;
 }): string {
-  return template
+  const advice = vars.advice?.trim() || "";
+  // If advice is empty, remove the placeholder AND the newline that follows it
+  // so the line disappears entirely rather than leaving a blank line
+  const withAdvice = advice
+    ? template.replace(/{advice}/g, advice)
+    : template.replace(/{advice}\n?/g, "");
+
+  return withAdvice
     .replace(/{patientName}/g, vars.patientName || "")
     .replace(/{clinicName}/g, vars.clinicName || "")
     .replace(/{doctorName}/g, vars.doctorName || "")

@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Layout } from "@/components/Layout";
 import {
   getAllBatchStocks, discontinueBatch, reactivateBatch,
-  getStockValuation, setBatchReorderLevel, dismissStockAlert,
+  setBatchReorderLevel, dismissStockAlert,
   formatExpiry, addStockAdjustment, BatchStock,
 } from "@/lib/inventory";
 import { getActiveDoctor } from "@/lib/settings";
@@ -11,18 +12,18 @@ import { useToast } from "@/hooks/use-toast";
 
 const ADJ_REASONS = ["Physical Count Correction", "Damaged", "Expired Removed", "Other"];
 
-type FilterKey = "all" | "out" | "low" | "expiry" | "discontinued";
+type FilterKey = "all" | "out" | "expired" | "low" | "expiry";
 
 export default function StockStatus() {
   const { toast } = useToast();
   const [activeFilter, setActiveFilter] = useState<FilterKey | null>(null);
-  const [, forceUpdate] = useState(0);
+  const [allBatches, setAllBatches] = useState<BatchStock[]>(() => getAllBatchStocks());
   const [editingReorder, setEditingReorder] = useState<string | null>(null);
   const [reorderValue, setReorderValue] = useState<number>(10);
 
   // Stock adjustment modal
   const [adjBatch, setAdjBatch] = useState<BatchStock | null>(null);
-  const [adjQty, setAdjQty] = useState<number>(0);
+  const [adjQtyStr, setAdjQtyStr] = useState<string>("");   // string so "-" prefix survives typing
   const [adjReason, setAdjReason] = useState(ADJ_REASONS[0]);
 
   // Delete product confirm
@@ -31,26 +32,31 @@ export default function StockStatus() {
   const doctor = getActiveDoctor();
   const isAdmin = doctor?.id === 1;
 
-  const allBatches = getAllBatchStocks();
-  const activeBatches = allBatches.filter(b => !b.discontinued);
-  const discontinuedBatches = allBatches.filter(b => b.discontinued);
+  // Re-reads storage and updates state — call after any mutation
+  const refresh = () => setAllBatches(getAllBatchStocks());
 
-  const outCount = activeBatches.filter(b => b.stockStatus === "out").length;
-  const lowCount = activeBatches.filter(b => b.stockStatus === "low").length;
-  const expiryCount = activeBatches.filter(b => b.daysToExpiry >= 0 && b.daysToExpiry <= 180).length;
-  const discontinuedCount = discontinuedBatches.length;
-  const valuation = getStockValuation();
+  // Counts for filter cards (always from full dataset)
+  const activeBatches  = allBatches.filter(b => !b.discontinued);
+  const inStockCount   = allBatches.filter(b => b.tabletsAvailable > 0).length;
+  // EXPIRED = physically expired AND still has stock on shelf
+  const expiredCount   = allBatches.filter(b => b.daysToExpiry < 0 && b.tabletsAvailable > 0).length;
+  // OUT OF STOCK = zero stock, regardless of expiry date
+  const outCount       = allBatches.filter(b => b.tabletsAvailable <= 0).length;
+  const lowCount       = activeBatches.filter(b => b.tabletsAvailable > 0 && b.tabletsAvailable <= b.reorderLevel && b.daysToExpiry >= 0).length;
+  const expiryCount    = activeBatches.filter(b => b.daysToExpiry > 0 && b.daysToExpiry <= 180).length;
+  // Compute valuation from allBatches state — same source as the rest of the UI
+  const stockValueAtCost = Math.round(
+    allBatches.filter(b => b.tabletsAvailable > 0)
+      .reduce((s, b) => s + b.tabletsAvailable * b.landingCostPerTablet, 0)
+  );
 
-  const getDisplayBatches = (): BatchStock[] => {
-    if (!activeFilter || activeFilter === "all") return activeBatches;
-    if (activeFilter === "out") return activeBatches.filter(b => b.stockStatus === "out");
-    if (activeFilter === "low") return activeBatches.filter(b => b.stockStatus === "low");
-    if (activeFilter === "expiry") return activeBatches.filter(b => b.daysToExpiry >= 0 && b.daysToExpiry <= 180);
-    if (activeFilter === "discontinued") return discontinuedBatches;
-    return activeBatches;
-  };
-
-  const displayBatches = getDisplayBatches();
+  // Filtered list — this is what the table renders
+  const filteredMedicines: BatchStock[] =
+    activeFilter === "out"       ? allBatches.filter(b => b.tabletsAvailable <= 0)
+    : activeFilter === "expired" ? allBatches.filter(b => b.daysToExpiry < 0 && b.tabletsAvailable > 0)
+    : activeFilter === "low"     ? activeBatches.filter(b => b.tabletsAvailable > 0 && b.tabletsAvailable <= b.reorderLevel && b.daysToExpiry >= 0)
+    : activeFilter === "expiry"  ? activeBatches.filter(b => b.daysToExpiry > 0 && b.daysToExpiry <= 180)
+    : allBatches.filter(b => b.tabletsAvailable > 0);
 
   const toggleFilter = (f: FilterKey) => {
     setActiveFilter(prev => prev === f ? null : f);
@@ -59,119 +65,68 @@ export default function StockStatus() {
   const handleDiscontinue = (billId: string, batchNo: string, medicineName: string) => {
     if (!confirm(`Mark ${medicineName} (Batch: ${batchNo}) as discontinued? It will be hidden from patient prescriptions.`)) return;
     discontinueBatch(billId, batchNo, medicineName);
-    forceUpdate(n => n + 1);
+    refresh();
     toast({ title: "Batch discontinued" });
   };
 
   const handleAdjust = () => {
-    if (!adjBatch || adjQty === 0) return;
+    const adjQty = Number(adjQtyStr);
+    if (!adjBatch || !adjQtyStr || isNaN(adjQty) || adjQty === 0) return;
     addStockAdjustment({
       billId: adjBatch.billId,
       batchNo: adjBatch.batchNo,
       medicineName: adjBatch.medicineName,
-      adjustQtyTablets: adjQty,
+      adjustQtyTablets: adjQty,          // exact value, positive or negative
       reason: adjReason,
       date: new Date().toISOString().slice(0, 10),
     });
     const newStock = adjBatch.tabletsAvailable + adjQty;
-    if (newStock <= 0) {
-      discontinueBatch(adjBatch.billId, adjBatch.batchNo, adjBatch.medicineName);
-      toast({ title: "Stock adjusted — batch discontinued (stock reached 0)" });
-    } else {
-      toast({ title: `Stock adjusted by ${adjQty > 0 ? "+" : ""}${adjQty} tabs` });
-    }
+    toast({ title: newStock <= 0 ? "Stock adjusted — now out of stock" : `Stock adjusted by ${adjQty > 0 ? "+" : ""}${adjQty} tabs` });
     setAdjBatch(null);
-    setAdjQty(0);
+    setAdjQtyStr("");
     setAdjReason(ADJ_REASONS[0]);
-    forceUpdate(n => n + 1);
+    refresh();
   };
 
   const handleDeleteProduct = () => {
     if (!deleteBatch) return;
-    if (deleteBatch.tabletsAvailable > 0) {
+    // Re-read live stock from storage — never trust the state snapshot
+    // (avoids stale tabletsAvailable and batchNo mismatch between "" and undefined)
+    const normBatchNo = deleteBatch.batchNo ?? "";
+    const fresh = getAllBatchStocks().find(
+      b => b.billId === deleteBatch.billId &&
+           (b.batchNo ?? "") === normBatchNo &&
+           b.medicineName.toLowerCase() === deleteBatch.medicineName.toLowerCase()
+    );
+    const liveStock = fresh?.tabletsAvailable ?? deleteBatch.tabletsAvailable;
+    if (liveStock > 0) {
       addStockAdjustment({
         billId: deleteBatch.billId,
-        batchNo: deleteBatch.batchNo,
+        batchNo: normBatchNo,
         medicineName: deleteBatch.medicineName,
-        adjustQtyTablets: -deleteBatch.tabletsAvailable,
+        adjustQtyTablets: -liveStock,
         reason: "Adjusted Out",
         date: new Date().toISOString().slice(0, 10),
       });
     }
-    discontinueBatch(deleteBatch.billId, deleteBatch.batchNo, deleteBatch.medicineName);
     const name = deleteBatch.medicineName;
     setDeleteBatch(null);
-    forceUpdate(n => n + 1);
-    toast({ title: `${name} removed from stock` });
+    refresh();
+    toast({ title: `${name} zeroed out — now Out of Stock` });
   };
 
-  const statusBadge = (status: string) => {
-    if (status === "out") return <span className="text-xs font-bold text-red-600 bg-red-100 border border-red-300 px-2.5 py-1 rounded-full">OUT OF STOCK</span>;
-    if (status === "low") return <span className="text-xs font-bold text-orange-600 bg-orange-100 border border-orange-300 px-2.5 py-1 rounded-full">LOW STOCK</span>;
-    return <span className="text-xs font-bold text-green-600 bg-green-100 border border-green-300 px-2.5 py-1 rounded-full">IN STOCK</span>;
+  const statusBadge = (b: BatchStock) => {
+    if (b.daysToExpiry < 0) return <span className="inline-block whitespace-nowrap min-w-[90px] text-center text-xs font-bold text-purple-700 bg-purple-100 border border-purple-300 px-2.5 py-1 rounded-full">Expired</span>;
+    if (b.stockStatus === "out") return <span className="inline-block whitespace-nowrap min-w-[90px] text-center text-xs font-bold text-red-600 bg-red-100 border border-red-300 px-2.5 py-1 rounded-full">Out of Stock</span>;
+    if (b.stockStatus === "low") return <span className="inline-block whitespace-nowrap min-w-[90px] text-center text-xs font-bold text-orange-600 bg-orange-100 border border-orange-300 px-2.5 py-1 rounded-full">Low Stock</span>;
+    return <span className="inline-block whitespace-nowrap min-w-[90px] text-center text-xs font-bold text-green-600 bg-green-100 border border-green-300 px-2.5 py-1 rounded-full">In Stock</span>;
   };
 
-  interface FilterCard {
-    key: FilterKey;
-    label: string;
-    count: number;
-    baseClass: string;
-    activeClass: string;
-    countClass: string;
-    activeCountClass: string;
-  }
-
-  const filterCards: FilterCard[] = [
-    {
-      key: "all",
-      label: "TOTAL BATCHES",
-      count: activeBatches.length,
-      baseClass: "border-slate-200 bg-white hover:border-blue-300",
-      activeClass: "border-blue-500 bg-blue-50",
-      countClass: "text-slate-800",
-      activeCountClass: "text-blue-700",
-    },
-    {
-      key: "out",
-      label: "OUT OF STOCK",
-      count: outCount,
-      baseClass: outCount > 0 ? "border-red-200 bg-red-50 hover:border-red-400" : "border-slate-200 bg-white hover:border-red-200",
-      activeClass: "border-red-500 bg-red-100",
-      countClass: outCount > 0 ? "text-red-600" : "text-slate-400",
-      activeCountClass: "text-red-700",
-    },
-    {
-      key: "low",
-      label: "LOW STOCK",
-      count: lowCount,
-      baseClass: lowCount > 0 ? "border-orange-200 bg-orange-50 hover:border-orange-400" : "border-slate-200 bg-white hover:border-orange-200",
-      activeClass: "border-orange-500 bg-orange-100",
-      countClass: lowCount > 0 ? "text-orange-600" : "text-slate-400",
-      activeCountClass: "text-orange-700",
-    },
-    {
-      key: "expiry",
-      label: "EXPIRY <6 MO",
-      count: expiryCount,
-      baseClass: expiryCount > 0 ? "border-yellow-200 bg-yellow-50 hover:border-yellow-400" : "border-slate-200 bg-white hover:border-yellow-200",
-      activeClass: "border-yellow-500 bg-yellow-100",
-      countClass: expiryCount > 0 ? "text-yellow-700" : "text-slate-400",
-      activeCountClass: "text-yellow-800",
-    },
-    {
-      key: "discontinued",
-      label: "DISCONTINUED",
-      count: discontinuedCount,
-      baseClass: "border-slate-200 bg-white hover:border-slate-400",
-      activeClass: "border-slate-500 bg-slate-100",
-      countClass: "text-slate-500",
-      activeCountClass: "text-slate-700",
-    },
-  ];
-
-  const newStock = adjBatch ? adjBatch.tabletsAvailable + adjQty : 0;
+  const adjQtyNum = Number(adjQtyStr);
+  const newStock = adjBatch ? adjBatch.tabletsAvailable + (isNaN(adjQtyNum) ? 0 : adjQtyNum) : 0;
 
   return (
+    <>
     <Layout>
       <div className="space-y-5">
         {/* Header */}
@@ -183,8 +138,8 @@ export default function StockStatus() {
             <div>
               <h1 className="text-xl font-bold text-slate-900">Stock & Expiry</h1>
               <p className="text-sm text-slate-500">
-                {activeBatches.length} batches · {outCount} out · {lowCount} low
-                · Stock ₹{valuation.atCost.toLocaleString("en-IN")}
+                {inStockCount} in stock · {outCount} out · {expiredCount} expired · {lowCount} low
+                · Stock ₹{stockValueAtCost.toLocaleString("en-IN")}
               </p>
             </div>
           </div>
@@ -192,26 +147,93 @@ export default function StockStatus() {
 
         {/* Filter Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {filterCards.map(card => {
-            const isActive = activeFilter === card.key;
-            return (
-              <button
-                key={card.key}
-                onClick={() => toggleFilter(card.key)}
-                className={`text-left rounded-xl p-4 border-2 transition-all shadow-sm cursor-pointer select-none
-                  ${isActive ? card.activeClass + " shadow-md" : card.baseClass}`}
-              >
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{card.label}</p>
-                <p className={`text-3xl font-bold mt-1 ${isActive ? card.activeCountClass : card.countClass}`}>
-                  {card.count}
-                </p>
-                {isActive && (
-                  <p className="text-xs text-slate-400 mt-0.5">click to clear</p>
-                )}
-              </button>
-            );
-          })}
+
+          {/* TOTAL BATCHES */}
+          <button type="button" onClick={() => toggleFilter("all")}
+            className={`text-left rounded-xl p-4 border-2 transition-all shadow-sm cursor-pointer select-none
+              ${activeFilter === "all"
+                ? "border-blue-500 bg-blue-50 shadow-md"
+                : "border-slate-200 bg-white hover:border-blue-300 hover:shadow-md"}`}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Batches</p>
+            <p className={`text-3xl font-bold mt-1 ${activeFilter === "all" ? "text-blue-700" : "text-slate-800"}`}>
+              {inStockCount}
+            </p>
+            {activeFilter === "all" && <p className="text-xs text-blue-400 mt-0.5">click to clear</p>}
+          </button>
+
+          {/* OUT OF STOCK */}
+          <button type="button" onClick={() => toggleFilter("out")}
+            className={`text-left rounded-xl p-4 border-2 transition-all shadow-sm cursor-pointer select-none
+              ${activeFilter === "out"
+                ? "border-red-500 bg-red-100 shadow-md"
+                : outCount > 0
+                  ? "border-red-200 bg-red-50 hover:border-red-400 hover:shadow-md"
+                  : "border-slate-200 bg-white hover:border-red-200 hover:shadow-md"}`}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Out of Stock</p>
+            <p className={`text-3xl font-bold mt-1 ${activeFilter === "out" ? "text-red-700" : outCount > 0 ? "text-red-600" : "text-slate-400"}`}>
+              {outCount}
+            </p>
+            {activeFilter === "out" && <p className="text-xs text-red-400 mt-0.5">click to clear</p>}
+          </button>
+
+          {/* EXPIRED */}
+          <button type="button" onClick={() => toggleFilter("expired")}
+            className={`text-left rounded-xl p-4 border-2 transition-all shadow-sm cursor-pointer select-none
+              ${activeFilter === "expired"
+                ? "border-purple-500 bg-purple-100 shadow-md"
+                : expiredCount > 0
+                  ? "border-purple-200 bg-purple-50 hover:border-purple-400 hover:shadow-md"
+                  : "border-slate-200 bg-white hover:border-purple-200 hover:shadow-md"}`}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Expired</p>
+            <p className={`text-3xl font-bold mt-1 ${activeFilter === "expired" ? "text-purple-700" : expiredCount > 0 ? "text-purple-600" : "text-slate-400"}`}>
+              {expiredCount}
+            </p>
+            {activeFilter === "expired" && <p className="text-xs text-purple-400 mt-0.5">click to clear</p>}
+          </button>
+
+          {/* LOW STOCK */}
+          <button type="button" onClick={() => toggleFilter("low")}
+            className={`text-left rounded-xl p-4 border-2 transition-all shadow-sm cursor-pointer select-none
+              ${activeFilter === "low"
+                ? "border-orange-500 bg-orange-100 shadow-md"
+                : lowCount > 0
+                  ? "border-orange-200 bg-orange-50 hover:border-orange-400 hover:shadow-md"
+                  : "border-slate-200 bg-white hover:border-orange-200 hover:shadow-md"}`}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Low Stock</p>
+            <p className={`text-3xl font-bold mt-1 ${activeFilter === "low" ? "text-orange-700" : lowCount > 0 ? "text-orange-600" : "text-slate-400"}`}>
+              {lowCount}
+            </p>
+            {activeFilter === "low" && <p className="text-xs text-orange-400 mt-0.5">click to clear</p>}
+          </button>
+
+          {/* EXPIRY <6 MO */}
+          <button type="button" onClick={() => toggleFilter("expiry")}
+            className={`text-left rounded-xl p-4 border-2 transition-all shadow-sm cursor-pointer select-none
+              ${activeFilter === "expiry"
+                ? "border-yellow-500 bg-yellow-100 shadow-md"
+                : expiryCount > 0
+                  ? "border-yellow-200 bg-yellow-50 hover:border-yellow-400 hover:shadow-md"
+                  : "border-slate-200 bg-white hover:border-yellow-200 hover:shadow-md"}`}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Expiry &lt;6 Mo</p>
+            <p className={`text-3xl font-bold mt-1 ${activeFilter === "expiry" ? "text-yellow-800" : expiryCount > 0 ? "text-yellow-700" : "text-slate-400"}`}>
+              {expiryCount}
+            </p>
+            {activeFilter === "expiry" && <p className="text-xs text-yellow-600 mt-0.5">click to clear</p>}
+          </button>
+
         </div>
+
+        {/* Active filter label */}
+        {activeFilter && activeFilter !== "all" && (
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <span className="font-semibold">Showing:</span>
+            <span className="bg-slate-100 border border-slate-200 rounded-full px-3 py-0.5 text-xs font-semibold">
+              {activeFilter === "out" ? "Out of Stock" : activeFilter === "expired" ? "Expired" : activeFilter === "low" ? "Low Stock" : "Expiry < 6 months"}
+            </span>
+            <span className="text-slate-400">· {filteredMedicines.length} result{filteredMedicines.length !== 1 ? "s" : ""}</span>
+            <button type="button" onClick={() => setActiveFilter(null)} className="ml-1 text-xs text-blue-500 hover:underline">clear</button>
+          </div>
+        )}
 
         {/* Table */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
@@ -227,26 +249,26 @@ export default function StockStatus() {
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {displayBatches.map((b, i) => (
+            <tbody key={activeFilter ?? "all"}>
+              {filteredMedicines.map((b, i) => (
                 <tr
                   key={`${b.billId}-${b.batchNo}`}
                   className={`border-b border-slate-100 hover:bg-slate-50 transition-colors
                     ${b.discontinued
                       ? "opacity-50 bg-slate-50"
-                      : b.stockStatus === "out"
-                        ? "bg-red-50/40"
-                        : b.stockStatus === "low"
-                          ? "bg-orange-50/40"
-                          : i % 2 === 0 ? "bg-white" : "bg-slate-50/20"
+                      : b.daysToExpiry < 0
+                        ? "bg-purple-50/40"
+                        : b.stockStatus === "out"
+                          ? "bg-red-50/40"
+                          : b.stockStatus === "low"
+                            ? "bg-orange-50/40"
+                            : i % 2 === 0 ? "bg-white" : "bg-slate-50/20"
                     }`}
                 >
                   <td className="px-4 py-2.5 font-semibold text-slate-900">
                     {b.medicineName}
                     {b.discontinued && (
-                      <span className="ml-2 text-xs text-slate-400">
-                        {b.adjustedOut ? "(Adjusted Out)" : "(discontinued)"}
-                      </span>
+                      <span className="ml-2 text-xs text-slate-400">(hidden from prescriptions)</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{b.batchNo || "—"}</td>
@@ -258,13 +280,13 @@ export default function StockStatus() {
                   <td className={`px-4 py-2.5 font-bold text-lg ${b.stockStatus === "out" ? "text-red-600" : b.stockStatus === "low" ? "text-orange-600" : "text-slate-900"}`}>
                     {b.tabletsAvailable}
                   </td>
-                  <td className="px-4 py-2.5">{statusBadge(b.stockStatus)}</td>
+                  <td className="px-4 py-2.5">{statusBadge(b)}</td>
                   {isAdmin && (
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-1 flex-wrap">
+                    <td className="px-4 py-2.5 overflow-x-auto">
+                      <div className="flex items-center gap-1 flex-nowrap">
                         {b.discontinued ? (
                           <button
-                            onClick={() => { reactivateBatch(b.billId, b.batchNo, b.medicineName); forceUpdate(n => n + 1); toast({ title: "Batch re-activated" }); }}
+                            onClick={() => { reactivateBatch(b.billId, b.batchNo, b.medicineName); refresh(); toast({ title: "Batch re-activated" }); }}
                             className="flex items-center gap-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors border border-green-300 font-medium"
                           >
                             ↺ Re-activate
@@ -274,7 +296,7 @@ export default function StockStatus() {
                             {/* Dismiss low stock alert */}
                             {b.stockStatus === "low" && (
                               <button
-                                onClick={() => { dismissStockAlert(b.billId, b.batchNo, b.medicineName); forceUpdate(n => n + 1); toast({ title: "Alert dismissed" }); }}
+                                onClick={() => { dismissStockAlert(b.billId, b.batchNo, b.medicineName); refresh(); toast({ title: "Alert dismissed" }); }}
                                 className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-700 hover:bg-orange-50 px-2 py-1 rounded-lg transition-colors"
                                 title="Dismiss low stock alert"
                               >
@@ -290,7 +312,7 @@ export default function StockStatus() {
                                   className="w-14 border border-slate-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none"
                                 />
                                 <button
-                                  onClick={() => { setBatchReorderLevel(b.billId, b.batchNo, b.medicineName, reorderValue); setEditingReorder(null); forceUpdate(n => n + 1); toast({ title: `Reorder: ${reorderValue} tabs` }); }}
+                                  onClick={() => { setBatchReorderLevel(b.billId, b.batchNo, b.medicineName, reorderValue); setEditingReorder(null); refresh(); toast({ title: `Reorder: ${reorderValue} tabs` }); }}
                                   className="text-xs text-green-600 font-bold px-1.5 py-0.5 bg-green-50 rounded border border-green-300"
                                 >✓</button>
                                 <button onClick={() => setEditingReorder(null)} className="text-xs text-slate-400 px-1">✕</button>
@@ -307,7 +329,7 @@ export default function StockStatus() {
                             )}
                             {/* Stock Adjustment */}
                             <button
-                              onClick={() => { setAdjBatch(b); setAdjQty(0); setAdjReason(ADJ_REASONS[0]); }}
+                              onClick={() => { setAdjBatch(b); setAdjQtyStr(""); setAdjReason(ADJ_REASONS[0]); }}
                               className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors"
                               title="Adjust stock"
                             >
@@ -336,7 +358,7 @@ export default function StockStatus() {
                   )}
                 </tr>
               ))}
-              {displayBatches.length === 0 && (
+              {filteredMedicines.length === 0 && (
                 <tr>
                   <td colSpan={10} className="text-center py-16 text-slate-400">
                     <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
@@ -349,9 +371,14 @@ export default function StockStatus() {
         </div>
       </div>
 
-      {/* ── Stock Adjustment Modal ── */}
-      {adjBatch && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setAdjBatch(null); }}>
+    </Layout>
+
+      {/* ── Stock Adjustment Modal (portal → document.body) ── */}
+      {adjBatch && createPortal(
+        <div
+          className="fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center p-4"
+          onMouseDown={e => { if (e.target === e.currentTarget) setAdjBatch(null); }}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-bold text-slate-900">Stock Adjustment</h2>
             <div className="bg-slate-50 rounded-lg p-3 space-y-0.5">
@@ -366,18 +393,18 @@ export default function StockStatus() {
               <p className="text-xs text-slate-400 mb-1.5">Positive = add &nbsp;·&nbsp; Negative = reduce</p>
               <input
                 type="number"
-                value={adjQty}
-                onChange={e => setAdjQty(Number(e.target.value))}
+                value={adjQtyStr}
+                onChange={e => setAdjQtyStr(e.target.value)}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                 autoFocus
               />
-              {adjQty !== 0 && (
+              {adjQtyStr !== "" && !isNaN(adjQtyNum) && adjQtyNum !== 0 && (
                 <p className="text-xs mt-1.5 font-medium">
                   New stock:{" "}
                   <span className={newStock <= 0 ? "text-red-600 font-bold" : "text-green-600 font-bold"}>
                     {Math.max(0, newStock)} tabs
                   </span>
-                  {newStock <= 0 && <span className="text-red-500 ml-1.5">→ will be discontinued</span>}
+                  {newStock <= 0 && <span className="text-red-500 ml-1.5">→ will be out of stock</span>}
                 </p>
               )}
             </div>
@@ -393,22 +420,28 @@ export default function StockStatus() {
             </div>
             <div className="flex gap-2 pt-1">
               <button
+                type="button"
                 onClick={() => setAdjBatch(null)}
                 className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50"
               >Cancel</button>
               <button
+                type="button"
                 onClick={handleAdjust}
-                disabled={adjQty === 0}
+                disabled={!adjQtyStr || isNaN(adjQtyNum) || adjQtyNum === 0}
                 className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-40"
               >Confirm</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ── Delete / Remove Product Confirm ── */}
-      {deleteBatch && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setDeleteBatch(null); }}>
+      {/* ── Delete / Remove Product Confirm (portal → document.body) ── */}
+      {deleteBatch && createPortal(
+        <div
+          className="fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center p-4"
+          onMouseDown={e => { if (e.target === e.currentTarget) setDeleteBatch(null); }}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-bold text-slate-900">Remove from Stock?</h2>
             <p className="text-sm text-slate-600">
@@ -417,21 +450,24 @@ export default function StockStatus() {
             </p>
             <p className="text-xs text-slate-400 bg-slate-50 rounded-lg p-3 leading-relaxed">
               Current stock of {deleteBatch.tabletsAvailable} tabs will be zeroed out via a stock adjustment.
-              The product will appear in the <strong>Discontinued</strong> filter with the tag "Adjusted Out".
+              The product will move to the <strong>Out of Stock</strong> filter with 0 tablets.
             </p>
             <div className="flex gap-2 pt-1">
               <button
+                type="button"
                 onClick={() => setDeleteBatch(null)}
                 className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50"
               >Cancel</button>
               <button
+                type="button"
                 onClick={handleDeleteProduct}
                 className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700"
               >Remove</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-    </Layout>
+    </>
   );
 }

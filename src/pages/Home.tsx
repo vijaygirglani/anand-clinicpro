@@ -285,10 +285,10 @@ export default function Home() {
   const [editPatientId, setEditPatientId] = useState<number | null>(null);
   const [editBillId, setEditBillId]       = useState<string | null>(null);
   const medGross = medRows.reduce((s, r) => s + r.mrp * r.qty, 0);
-  const billAmount = medGross + otherCharges;
+  const billAmount = Math.ceil(medGross + otherCharges);
   // medNames no longer needed - using searchMedicineNames from inventory
   const activeDoctor = getActiveDoctor();
-  const [waPatient, setWaPatient] = useState<{name: string; mobile: string} | null>(null);
+  const [waPatient, setWaPatient] = useState<{name: string; mobile: string; advice?: string} | null>(null);
 
   const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number; bestBatch: any}[]>([]);
   const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
@@ -754,9 +754,9 @@ export default function Home() {
         billDate: visitDate,
         items,                              // [] when no medicines
         otherCharges: otherCharges ?? 0,
-        totalSale:   medSale + (otherCharges ?? 0),   // medicines + procedure/discount
+        totalSale:   Math.ceil(medSale + (otherCharges ?? 0)),
         totalCost:   medCost,
-        totalProfit: medProfit + (otherCharges ?? 0), // positive=procedure adds profit, negative=discount reduces it
+        totalProfit: Math.ceil(medSale + (otherCharges ?? 0)) - medCost,
         createdAt: new Date().toISOString(),
       };
       savePatientBill(patientBill);
@@ -1603,7 +1603,7 @@ export default function Home() {
                 </button>
                 {lastSaved && (
                   <button type="button"
-                    onClick={() => setWaPatient({name: lastSaved.name, mobile: lastSaved.mobile})}
+                    onClick={() => setWaPatient({name: lastSaved.name, mobile: lastSaved.mobile, advice: lastSaved.advice || ""})}
                     className="px-5 py-3 rounded-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg transition-all flex items-center gap-2">
                     <MessageCircle className="w-5 h-5" /> WhatsApp
                   </button>
@@ -1912,6 +1912,7 @@ export default function Home() {
         <WhatsAppModal
           patientName={waPatient.name}
           mobile={waPatient.mobile}
+          advice={waPatient.advice}
           onClose={() => setWaPatient(null)}
         />
       )}
