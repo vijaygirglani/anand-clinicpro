@@ -609,11 +609,12 @@ export const PatientInfoForm = React.memo(function PatientInfoForm({
                 </div>
               </div>
               <div className="flex gap-3 px-6 pb-6">
-                <button onClick={() => setPendingAlert(null)}
+                <button type="button" onClick={() => setPendingAlert(null)}
                   className="flex-1 py-3 rounded-2xl border-2 border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-colors">
                   Remind Later
                 </button>
                 <button
+                  type="button"
                   onClick={() => { removePendingFee(pendingAlert.id); refreshPending(); setPendingAlert(null); toast({ title: "✓ Fees Collected", description: `₹${pendingAlert.amount} from ${pendingAlert.patientName} marked as collected.` }); }}
                   className="flex-[2] py-3 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2 shadow-lg"
                   style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
