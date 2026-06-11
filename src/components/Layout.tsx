@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { UserPlus, BookOpen, Code2, Package, ShoppingCart, BarChart3, Menu, X, ChevronDown, LogOut, Settings, IndianRupee } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { getSettings, getActiveDoctor, logout } from "@/lib/settings";
 import { getAllBatchStocks } from "@/lib/inventory";
 
@@ -64,11 +64,11 @@ function NavDropdown({ label, items, currentPath, badge }: {
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const settings = getSettings();
-  const doctor = getActiveDoctor();
+  const settings = useMemo(() => getSettings(), []);
+  const doctor = useMemo(() => getActiveDoctor(), []);
 
-  // Live stock alerts
-  const batches = getAllBatchStocks();
+  // Live stock alerts — read once on mount; badge refreshes on next navigation
+  const batches = useMemo(() => getAllBatchStocks(), []);
   const alerts = batches.filter(b => !b.discontinued && !b.alertDismissed && (b.stockStatus === "out" || b.stockStatus === "low")).length;
 
   const doctorBg = doctor?.id === 1
