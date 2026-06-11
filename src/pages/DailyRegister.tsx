@@ -24,7 +24,7 @@ import { exportToExcel, parseExcelFile } from "@/lib/export";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
-import { deletePatientBill } from "@/lib/inventory";
+import { deletePatientBill, getPatientBillsByDate, type PatientBill } from "@/lib/inventory";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
 import { getSettings } from "@/lib/settings";
 
@@ -52,10 +52,13 @@ export default function DailyRegister() {
   const [looseSalesForDay, setLooseSalesForDay] = useState<LooseSaleEntry[]>(() => getLooseSalesForDate(format(new Date(), "yyyy-MM-dd")));
   const looseDayTotal = useMemo(() => looseSalesForDay.reduce((s, e) => s + e.amount, 0), [looseSalesForDay]);
 
+  const [patientBills, setPatientBills] = useState<PatientBill[]>(() => getPatientBillsByDate(format(new Date(), "yyyy-MM-dd")));
+
   const refresh = useCallback(() => {
     setStats(getDailyStats(selectedDate));
     setAllDates(getAllDates());
     setLooseSalesForDay(getLooseSalesForDate(selectedDate));
+    setPatientBills(getPatientBillsByDate(selectedDate));
   }, [selectedDate]);
 
   useEffect(() => { refresh(); }, [selectedDate]); // depend on selectedDate directly to avoid stale closure
@@ -75,11 +78,16 @@ export default function DailyRegister() {
     [allPatients, filterType]
   );
 
-  // Collection for the active tab — fees only (patient.fees is the stored total)
+  const billsByPatientId = useMemo(() =>
+    Object.fromEntries(patientBills.map(b => [b.patientId, b])) as Record<number, PatientBill>,
+    [patientBills]
+  );
+
+  // Collection for the active tab — use bill.totalSale when available, else patient.fees
   const filteredCollection = useMemo(() =>
-    filteredPatients.reduce((s, p) => s + (p.fees || 0), 0)
+    filteredPatients.reduce((s, p) => s + (billsByPatientId[p.id]?.totalSale ?? p.fees ?? 0), 0)
       + (filterType === "all" ? looseDayTotal : 0),
-    [filteredPatients, filterType, looseDayTotal]
+    [filteredPatients, billsByPatientId, filterType, looseDayTotal]
   );
 
   const monthlyStats = showMonthly ? getMonthlyStats(monthlyYear, monthlyMonth) : null;
@@ -171,18 +179,13 @@ export default function DailyRegister() {
     const rows = monthlyStats.dailyBreakdown.map(d => ({
       "Date": format(new Date(d.date + "T00:00:00"), "dd-MMM-yyyy"),
       "Patients": d.count, "Total Collection (₹)": d.totalFees,
-      "General (₹)": d.generalFees, "Ayurvedic (₹)": d.ayurvedicFees,
     }));
-    rows.push({ "Date": "TOTAL", "Patients": monthlyStats.totalPatients, "Total Collection (₹)": monthlyStats.totalFees, "General (₹)": monthlyStats.generalFees, "Ayurvedic (₹)": monthlyStats.ayurvedicFees });
+    rows.push({ "Date": "TOTAL", "Patients": monthlyStats.totalPatients, "Total Collection (₹)": monthlyStats.totalFees });
     exportToExcel(rows, `Monthly_Report_${MONTHS[monthlyMonth - 1]}_${monthlyYear}`);
     toast({ title: "Monthly Report Exported" });
   };
 
   const buildDailyReportMsg = useCallback(() => {
-    const generalCount = (stats?.patients || []).filter(p => p.registerType !== "ayurvedic").length;
-    const ayurvedicCount = (stats?.patients || []).filter(p => p.registerType === "ayurvedic").length;
-    const generalFees = (stats?.patients || []).filter(p => p.registerType !== "ayurvedic").reduce((s, p) => s + (p.fees || 0), 0);
-    const ayurvedicFees = (stats?.patients || []).filter(p => p.registerType === "ayurvedic").reduce((s, p) => s + (p.fees || 0), 0);
     const dateStr = format(new Date(selectedDate + "T00:00:00"), "dd/MM/yyyy");
     const grandTotal = (stats?.totalFees || 0) + looseDayTotal;
     const looseLine = looseDayTotal > 0
@@ -194,11 +197,7 @@ export default function DailyRegister() {
 
 👥 *Patients Seen Today:* ${stats?.totalPatients || 0}
 
-💵 *Today's Collection:* ₹${grandTotal.toLocaleString("en-IN")}
-
-🩺 *General Cases:* ${generalCount} (₹${generalFees.toLocaleString("en-IN")})
-
-🌿 *Ayurvedic Cases:* ${ayurvedicCount} (₹${ayurvedicFees.toLocaleString("en-IN")})${looseLine}${waCustomNote.trim() ? `\n\n📝 *Note:* ${waCustomNote.trim()}` : ""}
+💵 *Today's Collection:* ₹${grandTotal.toLocaleString("en-IN")}${looseLine}${waCustomNote.trim() ? `\n\n📝 *Note:* ${waCustomNote.trim()}` : ""}
 
 Thank you everyone for your trust 🙏
 *Dr. Vijay Girglani*
@@ -334,7 +333,7 @@ Thank you everyone for your trust 🙏
                           : <span className="text-xs font-bold px-2 py-1 rounded-md bg-blue-100 text-blue-700">General</span>}
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-900">
-                        {p.fees ? `₹${p.fees}` : "-"}
+                        {billsByPatientId[p.id]?.totalSale != null ? `₹${billsByPatientId[p.id].totalSale}` : p.fees ? `₹${p.fees}` : "-"}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1">
@@ -405,13 +404,10 @@ Thank you everyone for your trust 🙏
 
               {monthlyStats && (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 px-6 py-4 bg-gradient-to-br from-primary/5 to-emerald-50/40 border-b border-slate-100">
+                  <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 px-6 py-4 bg-gradient-to-br from-primary/5 to-emerald-50/40 border-b border-slate-100">
                     {[
                       { label: "Total Patients", value: monthlyStats.totalPatients },
-                      { label: "General Pts.", value: monthlyStats.generalPatients },
-                      { label: "Ayurvedic Pts.", value: monthlyStats.ayurvedicPatients },
                       { label: "Total Collection", value: formatCurrency(monthlyStats.totalFees) },
-                      { label: "Ayurvedic Fees", value: formatCurrency(monthlyStats.ayurvedicFees) },
                     ].map((item, i) => (
                       <div key={i} className="text-center">
                         <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">{item.label}</p>
@@ -426,9 +422,7 @@ Thank you everyone for your trust 🙏
                         <tr>
                           <th className="px-6 py-3 font-semibold text-slate-500">Date</th>
                           <th className="px-6 py-3 font-semibold text-slate-500 text-center">Patients</th>
-                          <th className="px-6 py-3 font-semibold text-slate-500 text-right">General</th>
-                          <th className="px-6 py-3 font-semibold text-slate-500 text-right">Ayurvedic</th>
-                          <th className="px-6 py-3 font-semibold text-slate-500 text-right">Total</th>
+                          <th className="px-6 py-3 font-semibold text-slate-500 text-right">Collection</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -442,16 +436,12 @@ Thank you everyone for your trust 🙏
                               )}
                             </td>
                             <td className="px-6 py-2.5 text-center text-slate-600">{d.count}</td>
-                            <td className="px-6 py-2.5 text-right text-blue-700 font-medium">{d.generalFees > 0 ? formatCurrency(d.generalFees) : "—"}</td>
-                            <td className="px-6 py-2.5 text-right text-emerald-700 font-medium">{d.ayurvedicFees > 0 ? formatCurrency(d.ayurvedicFees) : "—"}</td>
                             <td className="px-6 py-2.5 text-right font-bold text-slate-900">{formatCurrency(d.totalFees)}</td>
                           </tr>
                         ))}
                         <tr className="bg-slate-50 border-t-2 border-slate-300">
                           <td className="px-6 py-3 font-bold text-slate-800">TOTAL</td>
                           <td className="px-6 py-3 text-center font-bold text-slate-800">{monthlyStats.totalPatients}</td>
-                          <td className="px-6 py-3 text-right font-bold text-blue-700">{formatCurrency(monthlyStats.generalFees)}</td>
-                          <td className="px-6 py-3 text-right font-bold text-emerald-700">{formatCurrency(monthlyStats.ayurvedicFees)}</td>
                           <td className="px-6 py-3 text-right font-bold text-slate-900 text-base">{formatCurrency(monthlyStats.totalFees)}</td>
                         </tr>
                       </tbody>

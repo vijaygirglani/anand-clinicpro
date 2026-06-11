@@ -27,7 +27,7 @@ export function Toaster() {
           </Toast>
         )
       })}
-      <ToastViewport />
+      <ToastViewport className="pointer-events-none [&>li]:pointer-events-auto" />
     </ToastProvider>
   )
 }

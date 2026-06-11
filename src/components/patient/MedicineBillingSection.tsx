@@ -2,7 +2,7 @@ import React, {
   useState, useEffect, useCallback, useRef, useMemo,
   forwardRef, useImperativeHandle,
 } from "react";
-import { UseFormReturn, useWatch } from "react-hook-form";
+import { UseFormReturn } from "react-hook-form";
 import { Activity, CheckCircle2, Hourglass } from "lucide-react";
 import {
   searchMedicineNames, getAvailableBatchesForMedicine, formatExpiry,
@@ -68,49 +68,24 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
       flushOtherCharges:  () => Number(otherChargesRef.current?.value) || 0,
     }));
 
-    // ── Complaint-code auto-fill ──────────────────────────────────────────
-    // useWatch scopes re-renders to this component only — never re-renders Home.
-    const complaintCodeValue = useWatch({ control: form.control, name: "complaintCode" });
-    const feesValue = useWatch({ control: form.control, name: "fees" });
-    useEffect(() => {
-      if (!complaintCodeValue || complaintCodeValue.length < 2) return;
-      const codeRecord = findComplaintCode(complaintCodeValue);
-      if (!codeRecord) return;
-      form.setValue("complaint", codeRecord.complaint);
-      form.setValue("treatment", codeRecord.treatment);
-      if (codeRecord.medicines && codeRecord.medicines.length > 0) {
-        setMedRows(codeRecord.medicines.map(m => {
-          const results = searchMedicineNames(m.medicineName);
-          const match = results.find(r => r.name.toLowerCase() === m.medicineName.toLowerCase());
-          return {
-            _id: crypto.randomUUID(),
-            medicineName: m.medicineName,
-            qty: m.defaultQty ?? 0,
-            mrp: match?.bestBatch ? +match.bestBatch.mrpPerTablet.toFixed(2) : 0,
-            batchNo: match?.bestBatch?.batchNo || "",
-            billId: match?.bestBatch?.billId || "",
-            landingCostPerTablet: match?.bestBatch?.landingCostPerTablet || 0,
-          };
-        }));
-      }
-    }, [complaintCodeValue, form, setMedRows]);
-
     const medGross = useMemo(() => medRows.reduce((s, r) => s + r.mrp * r.qty, 0), [medRows]);
 
-    // Memoize multi-batch check: one storage read per unique medicine name per render,
-    // not one read per row per render. Keyed by medicine names so it only recomputes
-    // when the set of medicines actually changes.
-    const multiBatchSet = useMemo(() => {
+    // Single memo: compute both batchesMap (used in render) and multiBatchSet (used for row highlight).
+    // Runs only when medRows changes — subsequent re-renders from displayBillTotal / feesMarkedPending
+    // / discount changes get O(1) map lookups instead of repeated getAllBatchStocks() reads.
+    const { batchesMap, multiBatchSet } = useMemo(() => {
       const names = [...new Set(medRows.map(r => r.medicineName).filter(Boolean))];
-      const set = new Set<string>();
+      const bMap = new Map<string, ReturnType<typeof getAvailableBatchesForMedicine>>();
+      const mSet = new Set<string>();
       for (const name of names) {
         const batches = getAvailableBatchesForMedicine(name);
+        bMap.set(name, batches);
         if (batches.length > 1) {
           const mrps = new Set(batches.map(b => b.mrpPerTablet.toFixed(2)));
-          if (mrps.size > 1) set.add(name);
+          if (mrps.size > 1) mSet.add(name);
         }
       }
-      return set;
+      return { batchesMap: bMap, multiBatchSet: mSet };
     }, [medRows]);
 
     // Uncontrolled discount field: local ref holds the typed value so keystrokes
@@ -118,6 +93,53 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
     // Only the tiny displayBillTotal state changes while the user is typing.
     const otherChargesLocalRef = useRef(otherCharges);
     const [displayBillTotal, setDisplayBillTotal] = useState(() => Math.ceil(medGross + otherCharges));
+
+    // ── Complaint-code auto-fill ──
+    // Declared here (after displayBillTotal) so it can batch ALL updates — complaint,
+    // treatment, medRows, AND bill total — into a single React render via auto-batching.
+    const applyComplaintCode = useCallback((val: string) => {
+      if (!val || val.length < 2) return;
+      const codeRecord = findComplaintCode(val);
+      if (!codeRecord) return;
+      // Compute new rows eagerly so we can derive the new bill total in the same tick.
+      const newRows = codeRecord.medicines && codeRecord.medicines.length > 0
+        ? codeRecord.medicines.map(m => {
+            const results = searchMedicineNames(m.medicineName);
+            const match = results.find(r => r.name.toLowerCase() === m.medicineName.toLowerCase());
+            return {
+              _id: crypto.randomUUID(),
+              medicineName: m.medicineName,
+              qty: m.defaultQty ?? 0,
+              mrp: match?.bestBatch ? +match.bestBatch.mrpPerTablet.toFixed(2) : 0,
+              batchNo: match?.bestBatch?.batchNo || "",
+              billId: match?.bestBatch?.billId || "",
+              landingCostPerTablet: match?.bestBatch?.landingCostPerTablet || 0,
+            };
+          })
+        : null;
+      // All four setters fire in the same synchronous call — React 18 auto-batches them
+      // into one render so complaint, medicines, and bill total all appear together.
+      form.setValue("complaint", codeRecord.complaint);
+      form.setValue("treatment", codeRecord.treatment);
+      if (newRows) {
+        setMedRows(newRows);
+        const newGross = newRows.reduce((s, r) => s + r.mrp * r.qty, 0);
+        setDisplayBillTotal(Math.ceil(newGross + otherChargesLocalRef.current));
+      }
+    }, [form, setMedRows, setDisplayBillTotal]);
+
+    // ── Uncontrolled fees field: same pattern as otherCharges.
+    // Avoids form-subscription re-renders on every fees keystroke.
+    const feesLocalRef = useRef(0);
+    const [feesLocalDisplay, setFeesLocalDisplay] = useState(0);
+    // Sync display when feesMarkedPending toggles on — snapshot current form value
+    useEffect(() => {
+      if (feesMarkedPending) {
+        const v = Number(form.getValues("fees")) || feesLocalRef.current;
+        feesLocalRef.current = v;
+        setFeesLocalDisplay(v);
+      }
+    }, [feesMarkedPending, form]);
 
     const medDropdownStyle = useMemo(() => ({
       position: "fixed" as const,
@@ -198,8 +220,9 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
 
     const addMedRow = () => setMedRows(p => [...p, { _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
 
-    const { ref: complaintCodeRHFRef, ...complaintCodeRest } = form.register("complaintCode");
+    const { ref: complaintCodeRHFRef, onBlur: complaintCodeRHFBlur, ...complaintCodeRest } = form.register("complaintCode");
     const { ref: complaintRHFRef, ...complaintRest } = form.register("complaint");
+    const { ref: feesRHFRef, onChange: feesRHFOnChange, onBlur: feesRHFBlur, ...feesRest } = form.register("fees");
 
     return (
       <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100 space-y-4">
@@ -210,7 +233,8 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
             </label>
             <input {...complaintCodeRest}
               ref={el => { complaintCodeRHFRef(el); complaintCodeRef.current = el; }}
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); complaintRef.current?.focus(); } }}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); applyComplaintCode(complaintCodeRef.current?.value || ""); complaintRef.current?.focus(); } }}
+              onBlur={e => { complaintCodeRHFBlur(e); applyComplaintCode(e.target.value); }}
               className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 uppercase text-slate-800"
               placeholder="E.G. CCF" />
           </div>
@@ -223,7 +247,17 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
               <input type="number"
                 value={medRows.length > 0 ? displayBillTotal : undefined}
                 readOnly={medRows.length > 0}
-                {...(medRows.length === 0 ? form.register("fees") : {})}
+                {...(medRows.length === 0 ? {
+                  ...feesRest,
+                  ref: feesRHFRef,
+                  onBlur: feesRHFBlur,
+                  onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+                    feesRHFOnChange(e);
+                    const v = Number(e.target.value) || 0;
+                    feesLocalRef.current = v;
+                    if (feesMarkedPending) setFeesLocalDisplay(v);
+                  },
+                } : {})}
                 min={0}
                 className={`flex-1 px-4 py-3 rounded-xl border focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 font-semibold text-slate-900 ${medRows.length > 0 ? "bg-green-50 border-green-300 cursor-not-allowed" : "bg-white border-slate-200"}`}
                 placeholder="Amount" />
@@ -241,7 +275,7 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
             </div>
             {feesMarkedPending && (() => {
               const hasMeds = medRows.some(r => r.medicineName.trim());
-              const billTotal = hasMeds ? displayBillTotal : (Number(feesValue) || 0);
+              const billTotal = hasMeds ? displayBillTotal : feesLocalDisplay;
               const paid = pendingAmount.trim() !== "" ? Math.max(0, Number(pendingAmount) || 0) : 0;
               const pendingAmt = Math.round(billTotal - paid);
               return (
@@ -436,7 +470,7 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
                       </td>
                       <td className="px-2 py-1 min-w-[90px]">
                         {r.medicineName ? (() => {
-                          const batches = getAvailableBatchesForMedicine(r.medicineName);
+                          const batches = batchesMap.get(r.medicineName) ?? [];
                           const selBatch = batches.find(b => b.batchNo === r.batchNo);
                           return (
                             <div>

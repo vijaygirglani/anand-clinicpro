@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
+import { SimpleToaster } from "@/components/ui/SimpleToast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -68,7 +68,7 @@ function LicenseBanner() {
   if (info.status === "grace") return (
     <div className="w-full px-4 py-2 flex items-center justify-center gap-2 text-sm font-semibold"
       style={{ background: "linear-gradient(90deg,#fed7aa,#fca5a5)", color: "#7f1d1d" }}>
-      <AlertTriangle className="w-4 h-4 shrink-0 animate-pulse" />
+      <AlertTriangle className="w-4 h-4 shrink-0" />
       <span>⚠️ License EXPIRED — Grace period: <strong>{info.graceDaysLeft} day{info.graceDaysLeft !== 1 ? "s" : ""} left</strong>. Contact Manglam ClinicPro to renew.</span>
     </div>
   );
@@ -109,7 +109,7 @@ export default function App() {
             {state === "setup" && <Setup onDone={() => setState("login")} />}
             {state === "login" && <Login onLogin={() => setState("app")} />}
             {state === "app" && <AppRoutes onSwitch={() => setState("login")} />}
-            <Toaster />
+            <SimpleToaster />
           </Router>
         </LicenseGate>
       </TooltipProvider>

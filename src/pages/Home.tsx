@@ -1,319 +1,72 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
 import { Layout } from "@/components/Layout";
 import {
-  addPatient, updatePatient, getPatients, lookupByMobile, lookupByName, findComplaintCode,
-  getNextPatientNo, getNextCaseNo, lookupByComplaint, lookupByAddress,
-  searchPatientSuggestions,
-  type Patient, type PatientSuggestion,
+  addPatient, updatePatient, getPatients,
+  getNextPatientNo,
+  type Patient,
 } from "@/lib/store";
 import { PrintPrescription, printPatientPrescription } from "@/components/PrintPrescription";
 import {
-  Loader2, User, Phone, MapPin, Activity, Save, RefreshCw,
-  FileText, Printer, Paperclip, X, Leaf, Weight, Calendar,
-  Zap, Search, SlidersHorizontal, Sheet, Link, ClipboardPaste,
-  Hourglass, CheckCircle2, WalletCards, MessageSquare, ChevronDown, Stethoscope,
-  MessageCircle} from "lucide-react";
-
-// ── Pending Fees helpers ──────────────────────────────────────────────
-const PENDING_KEY = "cp_pending_fees";
-interface PendingEntry {
-  id: string;           // UUID — primary key for removal
-  patientId: number;
-  patientName: string;
-  patientMobile: string;
-  amount: number;       // the PENDING (unpaid) portion
-  date: string;         // visit date (yyyy-MM-dd)
-  billDate: string;
-  markedAt: string;
-}
-function getPendingFees(): PendingEntry[] { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); } catch { return []; } }
-/** One pending entry per mobile — replacing any prior entry for the same patient */
-function addPendingFee(e: PendingEntry) {
-  const rest = getPendingFees().filter(x => x.patientMobile.replace(/\D/g,"") !== e.patientMobile.replace(/\D/g,""));
-  localStorage.setItem(PENDING_KEY, JSON.stringify([...rest, e]));
-}
-function removePendingFee(id: string) { localStorage.setItem(PENDING_KEY, JSON.stringify(getPendingFees().filter(e => e.id !== id))); }
+  Save, Printer, X, WalletCards, CheckCircle2, MessageCircle,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getActiveDoctor } from "@/lib/settings";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
 import {
-  searchMedicineNames, getAvailableBatchesForMedicine,
-  savePatientBill, deletePatientBill, getPatientBills, newId, formatExpiry,
+  getAvailableBatchesForMedicine,
+  savePatientBill, deletePatientBill, getPatientBills, newId,
   type PatientBill, type PatientMedicineItem,
 } from "@/lib/inventory";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-
-// ── Pathya-Apathya Disease helpers ───────────────────────────────────────────
-const PA_STORAGE_KEY = "mc_imported_diseases";
-interface PADisease {
-  id: string; group: string;
-  nameEn: string; nameHi: string; nameGu: string;
-  causesEn: string[]; causesHi: string[]; causesGu: string[];
-  pathyaEn: string[]; pathyaHi: string[]; pathyaGu: string[];
-  apathyaEn: string[]; apathyaHi: string[]; apathyaGu: string[];
-}
-// Static built-in diseases list (name + keywords for matching)
-const BUILTIN_DISEASE_KEYWORDS: { id: string; nameEn: string; nameHi: string; nameGu: string; keywords: string[] }[] = [
-  { id: "amlapitta",       nameEn: "Amlapitta (Hyperacidity)",      nameHi: "अम्लपित्त",        nameGu: "અમ્લપિત્ત",     keywords: ["acid", "acidity", "hyperacidity", "reflux", "amlapitta", "heartburn", "burning", "chest"] },
-  { id: "agnimandya",      nameEn: "Agnimandya (Weak Digestion)",   nameHi: "अग्निमांद्य",      nameGu: "અગ્નિમાંદ્ય",  keywords: ["digestion", "digestive", "appetite", "agnimandya", "weak stomach", "indigestion"] },
-  { id: "ajirna",          nameEn: "Ajirna (Indigestion)",          nameHi: "अजीर्ण",           nameGu: "અજીર્ણ",        keywords: ["indigestion", "ajirna", "bloat", "gas", "abdomen", "stomach"] },
-  { id: "atisara",         nameEn: "Atisara (Diarrhea)",            nameHi: "अतिसार",           nameGu: "અતિસાર",        keywords: ["diarrhea", "diarrhoea", "loose stool", "loose motion", "atisara"] },
-  { id: "grahani",         nameEn: "Grahani (IBS)",                 nameHi: "ग्रहणी",           nameGu: "ગ્રહણી",        keywords: ["ibs", "grahani", "irritable bowel", "alternating", "colon"] },
-  { id: "arsha",           nameEn: "Arsha (Piles/Hemorrhoids)",     nameHi: "अर्श (बवासीर)",   nameGu: "અર્શ (પાઈલ્સ)", keywords: ["piles", "hemorrhoid", "arsha", "bleeding", "rectal", "bavaseer"] },
-  { id: "vibandha",        nameEn: "Vibandha (Constipation)",       nameHi: "विबन्ध",           nameGu: "વિબન્ધ",        keywords: ["constipation", "vibandha", "hard stool", "irregular bowel"] },
-  { id: "adhmana",         nameEn: "Adhmana (Bloating/Gas)",        nameHi: "आध्मान",           nameGu: "આધ્માન",        keywords: ["bloating", "gas", "adhmana", "flatulence", "distension", "wind"] },
-  { id: "chhardi",         nameEn: "Chhardi (Vomiting)",            nameHi: "छर्दि",             nameGu: "છર્દિ",          keywords: ["vomiting", "nausea", "chhardi", "vomit"] },
-  { id: "krimi",           nameEn: "Krimi (Worm Infestation)",      nameHi: "कृमि",              nameGu: "કૃમિ",           keywords: ["worm", "krimi", "parasite", "stomach worm"] },
-  { id: "udarashoola",     nameEn: "Udarashoola (Abdominal Pain)",  nameHi: "उदरशूल",           nameGu: "ઉદ્રરશૂળ",     keywords: ["abdominal pain", "stomach ache", "udarashoola", "colic", "cramp"] },
-  { id: "yakrit-vikara",   nameEn: "Yakrit Vikara (Liver Disorder)",nameHi: "यकृत विकार",       nameGu: "યકૃત વિકાર",   keywords: ["liver", "yakrit", "hepatitis", "fatty liver", "jaundice", "sgpt"] },
-  { id: "pandu",           nameEn: "Pandu (Anemia)",                nameHi: "पांडु",             nameGu: "પાંડુ",          keywords: ["anemia", "pandu", "weakness", "pallor", "hemoglobin", "hb low"] },
-  { id: "mutrakriccha",    nameEn: "Mutrakriccha (Burning Urination)",nameHi: "मूत्रकृच्छ",    nameGu: "મૂત્રકૃચ્છ",  keywords: ["burning urination", "dysuria", "urinary burning", "urine pain", "mutrakriccha"] },
-  { id: "uti",             nameEn: "UTI (Urinary Tract Infection)",  nameHi: "मूत्रमार्ग संक्रमण", nameGu: "UTI",       keywords: ["uti", "urinary infection", "urinary tract", "urine infection", "frequent urination"] },
-  { id: "ashmari",         nameEn: "Ashmari (Kidney Stones)",       nameHi: "अश्मरी",           nameGu: "અશ્મરી",        keywords: ["kidney stone", "ashmari", "renal stone", "calculus", "gravel", "urine stone"] },
-  { id: "prostate-vruddhi",nameEn: "Prostate Enlargement",          nameHi: "प्रोस्टेट वृद्धि", nameGu: "પ્રોસ્ટેટ",   keywords: ["prostate", "bph", "enlarged prostate", "urine flow", "prostate vruddhi"] },
-  { id: "atimutra",        nameEn: "Atimutra (Frequent Urination)",  nameHi: "अतिमूत्र",        nameGu: "અતિમૂત્ર",     keywords: ["frequent urination", "polyuria", "atimutra", "diabetes urine", "night urination"] },
-];
-
-function getAllDiseases(): PADisease[] {
-  try {
-    const imported: PADisease[] = JSON.parse(localStorage.getItem(PA_STORAGE_KEY) || "[]");
-    return imported;
-  } catch { return []; }
-}
-
-function formatMobileWA(m: string): string {
-  const d = m.replace(/\D/g, "");
-  if (d.length === 10) return `91${d}`;
-  if (d.startsWith("91") && d.length === 12) return d;
-  return d;
-}
-
-function buildWhatsAppMsg(disease: PADisease, patientName: string, lang: "en" | "hi" | "gu"): string {
-  const today = format(new Date(), "dd/MM/yyyy");
-
-  const name    = lang === "gu" ? (disease.nameGu || disease.nameEn) : lang === "hi" ? (disease.nameHi || disease.nameEn) : disease.nameEn;
-  const causes  = (lang === "gu" ? disease.causesGu  : lang === "hi" ? disease.causesHi  : disease.causesEn).map(c => `  • ${c}`).join("\n");
-  const pathya  = (lang === "gu" ? disease.pathyaGu  : lang === "hi" ? disease.pathyaHi  : disease.pathyaEn).map(p => `  • ${p}`).join("\n");
-  const apathya = (lang === "gu" ? disease.apathyaGu : lang === "hi" ? disease.apathyaHi : disease.apathyaEn).map(a => `  • ${a}`).join("\n");
-
-  const ptLabel     = lang === "gu" ? "દર્દી"         : lang === "hi" ? "दर्दी"        : "Patient";
-  const dateLabel   = lang === "gu" ? "તારીખ"        : lang === "hi" ? "तारीख"       : "Date";
-  const causesLabel = lang === "gu" ? "કારણ (Nidana)" : lang === "hi" ? "कारण (Nidana)" : "Causes (Nidana)";
-  const pathyaLabel = lang === "gu" ? "પથ્ય — શું ખાવું"   : lang === "hi" ? "पथ्य — क्या खाएं"   : "Pathya — What to Eat";
-  const apathyaLbl  = lang === "gu" ? "અપથ્ય — શું ન ખાવું" : lang === "hi" ? "अपथ्य — क्या न खाएं" : "Apathya — What to Avoid";
-  const footer      = lang === "gu"
-    ? "_Manglam Skin Care Clinic, Tankara તરફથી આયુર્વેદિક માર્ગદર્શન_"
-    : lang === "hi"
-    ? "_Manglam Skin Care Clinic, Tankara से आयुर्वेदिक मार्गदर्शन_"
-    : "_Manglam Skin Care Clinic, Tankara — Ayurvedic Guidance_";
-
-  const ptLine = patientName ? `\n👤 *${ptLabel}:* ${patientName}` : "";
-
-  return [
-    `🏥 *Manglam Skin Care Clinic*`,
-    `Dr. Vijay Girglani | B.A.M.S., C.S.D. | Reg. GBI 17318`,
-    ptLine,
-    `📅 *${dateLabel}:* ${today}`,
-    ``,
-    `🔖 *${name}*`,
-    ``,
-    `⚠️ *${causesLabel}:*`,
-    causes || "  (See doctor for details)",
-    ``,
-    `✅ *${pathyaLabel}:*`,
-    pathya || "  (See doctor for details)",
-    ``,
-    `❌ *${apathyaLbl}:*`,
-    apathya || "  (See doctor for details)",
-    ``,
-    footer,
-  ].filter(l => l !== "").join("\n");
-}
-
-// Smart disease matcher: score diseases against complaint text
-function matchDiseasesToComplaint(complaint: string, imported: PADisease[]): Array<{ disease: PADisease | null; builtin: typeof BUILTIN_DISEASE_KEYWORDS[0] | null; score: number }> {
-  if (!complaint || complaint.trim().length < 3) return [];
-  const q = complaint.toLowerCase();
-  const results: Array<{ disease: PADisease | null; builtin: typeof BUILTIN_DISEASE_KEYWORDS[0] | null; score: number; name: string }> = [];
-
-  // Score builtins
-  for (const b of BUILTIN_DISEASE_KEYWORDS) {
-    let score = 0;
-    for (const kw of b.keywords) { if (q.includes(kw)) score += kw.length; }
-    if (score > 0) results.push({ builtin: b, disease: null, score, name: b.nameEn });
-  }
-
-  // Score imported diseases
-  for (const d of imported) {
-    let score = 0;
-    const nameWords = d.nameEn.toLowerCase().split(/\W+/).filter(w => w.length > 2);
-    for (const w of nameWords) { if (q.includes(w)) score += w.length * 2; }
-    if (score > 0) results.push({ builtin: null, disease: d, score, name: d.nameEn });
-  }
-
-  return results.sort((a, b) => b.score - a.score).slice(0, 6);
-}
-
-// ── Google Sheet helpers ──────────────────────────────────────────────
-const SHEET_KEY = "manglam_sheet_url";
-
-function extractSheetId(input: string): string | null {
-  // Accept full URL or bare ID
-  const match = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (match) return match[1];
-  if (/^[a-zA-Z0-9-_]{20,}$/.test(input.trim())) return input.trim();
-  return null;
-}
-
-function sheetCsvUrl(sheetId: string): string {
-  return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`;
-}
-
-interface SheetRow {
-  name: string;
-  mobile: string;
-  age: string;
-  weight: string;
-  address: string;
-}
-
-async function fetchSheetRows(sheetId: string): Promise<SheetRow[]> {
-  const url = sheetCsvUrl(sheetId);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Could not fetch sheet. Make sure it is published to web as CSV.");
-  const text = await res.text();
-  const lines = text.trim().split("\n").filter(Boolean);
-  if (lines.length < 2) return [];
-  // Detect header row — find column indices
-  const header = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/[^a-z]/g, ""));
-  const idx = (names: string[]) => names.reduce((found, n) => found >= 0 ? found : header.indexOf(n), -1);
-  const nameIdx    = idx(["name", "patientname", "patient"]);
-  const mobileIdx  = idx(["mobile", "mobileno", "phone", "caseno", "case"]);
-  const ageIdx     = idx(["age"]);
-  const weightIdx  = idx(["weight"]);
-  const addressIdx = idx(["address", "village", "city", "area"]);
-
-  return lines.slice(1).map(line => {
-    // Handle quoted CSV fields
-    const cols: string[] = [];
-    let cur = "", inQ = false;
-    for (const ch of line) {
-      if (ch === '"') { inQ = !inQ; }
-      else if (ch === "," && !inQ) { cols.push(cur.trim()); cur = ""; }
-      else cur += ch;
-    }
-    cols.push(cur.trim());
-    return {
-      name:    nameIdx    >= 0 ? cols[nameIdx]    || "" : "",
-      mobile:  mobileIdx  >= 0 ? cols[mobileIdx]  || "" : "",
-      age:     ageIdx     >= 0 ? cols[ageIdx]      || "" : "",
-      weight:  weightIdx  >= 0 ? cols[weightIdx]   || "" : "",
-      address: addressIdx >= 0 ? cols[addressIdx]  || "" : "",
-    };
-  }).filter(r => r.name || r.mobile);
-}
-
-const patientSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  mobile: z.string().min(1, "Mobile / Case No. required"),
-  visitDate: z.string().min(1, "Visit date required"),
-  age: z.coerce.number().min(0).optional(),
-  ageMonths: z.coerce.number().min(0).max(11).optional(),
-  weight: z.string().optional(),
-  address: z.string().optional(),
-  complaintCode: z.string().optional(),
-  complaint: z.string().optional(),
-  treatment: z.string().optional(),
-  advice: z.string().optional(),
-  reports: z.string().optional(),
-  fees: z.coerce.number().min(0).optional(),
-});
-
-type PatientFormValues = z.infer<typeof patientSchema>;
-type FilterMode = "history" | "complaint" | "address";
-
-const todayStr = format(new Date(), "yyyy-MM-dd");
-
-const emptyDefaults: PatientFormValues = {
-  name: "", mobile: "", visitDate: todayStr,
-  age: 0, ageMonths: 0, weight: "", address: "",
-  complaintCode: "", complaint: "", treatment: "",
-  advice: "", reports: "", fees: 0,
-};
-
-interface VisitCardProps {
-  visit: import("@/lib/store").Patient;
-  bill: import("@/lib/inventory").PatientBill | undefined;
-  onSelect: (visit: import("@/lib/store").Patient) => void;
-  onPrint: (visit: import("@/lib/store").Patient) => void;
-}
-const VisitCard = React.memo(function VisitCard({ visit, bill, onSelect, onPrint }: VisitCardProps) {
-  return (
-    <div
-      className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-primary/5 hover:border-primary/20 transition-colors cursor-pointer"
-      onClick={() => { onSelect(visit); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-xs font-bold px-2 py-1 bg-white rounded-md border border-slate-200 text-slate-600">
-          {format(new Date(visit.visitDate), "dd MMM yyyy")}
-        </span>
-        <div className="flex items-center gap-1.5">
-          {visit.registerType === "ayurvedic" && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded">AYU</span>
-          )}
-          {visit.fees > 0 && (
-            <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-md">₹{visit.fees}</span>
-          )}
-          <span className="text-[10px] text-slate-400 font-medium">tap to edit</span>
-        </div>
-      </div>
-      <div className="space-y-1">
-        {visit.complaint && <p className="text-xs text-slate-700"><span className="text-[10px] uppercase text-slate-400 font-bold">Complaint: </span>{visit.complaint}</p>}
-        {visit.treatment && <p className="text-xs text-slate-600"><span className="text-[10px] uppercase text-slate-400 font-bold">Treatment: </span>{visit.treatment}</p>}
-        {bill && bill.items.length > 0 && (
-          <div>
-            <span className="text-[10px] uppercase text-slate-400 font-bold">Medicines: </span>
-            <span className="text-xs text-slate-700">{bill.items.map(it => `${it.medicineName} ×${it.qtyTablets}`).join(", ")}</span>
-          </div>
-        )}
-        {visit.advice && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Advice: </span>{visit.advice}</p>}
-        {visit.reports && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Reports: </span>{visit.reports}</p>}
-        {visit.fees > 0 && <p className="text-xs text-slate-500"><span className="text-[10px] uppercase text-slate-400 font-bold">Fees: </span>₹{visit.fees}</p>}
-      </div>
-      <div className="mt-2 flex justify-end">
-        <button type="button" onClick={e => { e.stopPropagation(); onPrint(visit); }}
-          className="flex items-center gap-1 text-xs text-slate-400 hover:text-primary transition-colors">
-          <Printer className="w-3 h-3" /> Print
-        </button>
-      </div>
-    </div>
-  );
-});
+import {
+  getPendingFees, addPendingFee, removePendingFee, type PendingEntry,
+} from "@/lib/pendingFees";
+import { patientSchema, type PatientFormValues, emptyDefaults, emptyMedRow, type MedRow, todayStr } from "@/components/patient/types";
+import { PatientInfoForm } from "@/components/patient/PatientInfoForm";
+import { MedicineBillingSection, type MedicineBillingSectionRef } from "@/components/patient/MedicineBillingSection";
+import { PatientNotesSection, type PatientNotesSectionRef } from "@/components/patient/PatientNotesSection";
+import { PatientHistoryPanel } from "@/components/patient/PatientHistoryPanel";
 
 export default function Home() {
   const { toast } = useToast();
-  const [isLookingUp, setIsLookingUp] = useState(false);
+
   const [patientHistory, setPatientHistory] = useState<Patient[]>([]);
   const [historyName, setHistoryName] = useState("");
   const [historyMobile, setHistoryMobile] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Patient | null>(null);
-  const [filterMode, setFilterMode] = useState<FilterMode>("history");
-  const [filterQuery, setFilterQuery] = useState("");
-  const [filterResults, setFilterResults] = useState<Patient[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [nameSuggestions, setNameSuggestions] = useState<PatientSuggestion[]>([]);
-  const [showNameDropdown, setShowNameDropdown] = useState(false);
-  const [highlightedNameIdx, setHighlightedNameIdx] = useState<number | null>(null);
-  const isPrefillingRef = useRef(false); // suppress dropdown during programmatic pre-fill
   const [pendingFees, setPendingFees] = useState<PendingEntry[]>(() => getPendingFees());
+  const [pendingAlert, setPendingAlert] = useState<PendingEntry | null>(null);
   const [feesMarkedPending, setFeesMarkedPending] = useState(false);
   const [pendingAmount, setPendingAmount] = useState<string>("");
   const [showPendingModal, setShowPendingModal] = useState(false);
-  const [pendingAlert, setPendingAlert] = useState<PendingEntry | null>(null);
+
+  const [medRows, setMedRows] = useState<MedRow[]>([emptyMedRow()]);
+  const medRowsRef = useRef<MedRow[]>([emptyMedRow()]);
+  const setMedRowsSync = useCallback((rows: MedRow[] | ((prev: MedRow[]) => MedRow[])) => {
+    setMedRows(prev => {
+      const next = typeof rows === "function" ? rows(prev) : rows;
+      medRowsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const [otherCharges, setOtherCharges] = useState<number>(0);
+  const [editPatientId, setEditPatientId] = useState<number | null>(null);
+  const [editBillId, setEditBillId] = useState<string | null>(null);
+
+  // Read once — doctor selection doesn't change mid-session
+  const activeDoctor = useMemo(() => getActiveDoctor(), []);
+
+  const [waPatient, setWaPatient] = useState<{name: string; mobile: string; advice?: string} | null>(null);
+
+  const mobileRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const medicineSectionRef = useRef<MedicineBillingSectionRef>(null);
+  const notesSectionRef = useRef<PatientNotesSectionRef>(null);
 
   // ── History bill lookup ──
   const historyBillMap = useMemo(() => {
@@ -324,178 +77,22 @@ export default function Home() {
     return m;
   }, [patientHistory]);
 
-  // ── Medicine Table state ──
-  interface MedRow {
-    _id: string;
-    medicineName: string;
-    qty: number;
-    mrp: number;
-    batchNo: string;
-    billId: string;
-    landingCostPerTablet: number;
-  }
-  const [medRows, setMedRows] = useState<MedRow[]>([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
-  const medRowsRef = useRef<MedRow[]>([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
-  const setMedRowsSync = (rows: MedRow[] | ((prev: MedRow[]) => MedRow[])) => {
-    setMedRows(prev => {
-      const next = typeof rows === "function" ? rows(prev) : rows;
-      medRowsRef.current = next;
-      return next;
-    });
-  };
-  const [otherCharges, setOtherCharges] = useState<number>(0);
-  const [editPatientId, setEditPatientId] = useState<number | null>(null);
-  const [editBillId, setEditBillId]       = useState<string | null>(null);
-  const medGross = useMemo(() => medRows.reduce((s, r) => s + r.mrp * r.qty, 0), [medRows]);
-  const billAmount = useMemo(() => Math.ceil(medGross + otherCharges), [medGross, otherCharges]);
-  // medNames no longer needed - using searchMedicineNames from inventory
-  const activeDoctor = getActiveDoctor();
-  const [waPatient, setWaPatient] = useState<{name: string; mobile: string; advice?: string} | null>(null);
-
-  const [medSuggestions, setMedSuggestions] = useState<{name: string; mrpPerTablet: number; currentStock: number; bestBatch: any}[]>([]);
-  const [activeMedIdx, setActiveMedIdx] = useState<number | null>(null);
-  const [highlightedSugIdx, setHighlightedSugIdx] = useState<number | null>(null);
-  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
-  const medDropdownStyle = useMemo(() => ({
-    position: "fixed" as const,
-    zIndex: 99999,
-    backgroundColor: "white",
-    border: "1px solid #e2e8f0",
-    borderRadius: "8px",
-    boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-    width: `${Math.max(dropdownPos.width, 320)}px`,
-    maxHeight: "240px",
-    overflowY: "auto" as const,
-    top: `${dropdownPos.top}px`,
-    left: `${dropdownPos.left}px`,
-  }), [dropdownPos]);
-  const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const medQtyRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const otherChargesRef = useRef<HTMLInputElement | null>(null);
-  const ageRef = useRef<HTMLInputElement | null>(null);
-  const ageMonthsRef = useRef<HTMLInputElement | null>(null);
-  const weightRef = useRef<HTMLInputElement | null>(null);
-  const addressRef = useRef<HTMLInputElement | null>(null);
-  const complaintCodeRef = useRef<HTMLInputElement | null>(null);
-  const complaintRef = useRef<HTMLTextAreaElement | null>(null);
-  const adviceRef = useRef<HTMLTextAreaElement | null>(null);
-  const reportsRef = useRef<HTMLTextAreaElement | null>(null);
-  const submitBtnRef = useRef<HTMLButtonElement | null>(null);
-
-  const addMedRow = () => setMedRowsSync(p => [...p, { _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
-
-  // Check if medicine has multiple batches (different MRPs)
-  const hasMultipleBatches = (medicineName: string): boolean => {
-    if (!medicineName) return false;
-    const batches = getAvailableBatchesForMedicine(medicineName);
-    if (batches.length <= 1) return false;
-    const mrps = new Set(batches.map(b => b.mrpPerTablet.toFixed(2)));
-    return mrps.size > 1;
-  };
-
-  const getMedSuggestions = useCallback((query: string) => {
-    if (!query || query.length < 1) return [];
-    const results = searchMedicineNames(query);
-    const suggestions: {name: string; mrpPerTablet: number; currentStock: number; bestBatch: any; batchLabel: string}[] = [];
-    for (const r of results) {
-      if (r.batches.length === 1) {
-        // Single batch - show one line
-        suggestions.push({
-          name: r.name,
-          mrpPerTablet: r.bestBatch?.mrpPerTablet || 0,
-          currentStock: r.batches.reduce((s, b) => s + b.tabletsAvailable, 0),
-          bestBatch: r.bestBatch,
-          batchLabel: "",
-        });
-      } else {
-        // Multiple batches - show each batch separately so doctor can pick
-        for (const batch of r.batches) {
-          suggestions.push({
-            name: r.name,
-            mrpPerTablet: batch.mrpPerTablet,
-            currentStock: batch.tabletsAvailable,
-            bestBatch: batch,
-            batchLabel: `Batch ${batch.batchNo} · exp:${formatExpiry(batch.expiryDate)}`,
-          });
-        }
-      }
-    }
-    return suggestions.slice(0, 10);
-  }, []);
-  const medSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
-    setMedRowsSync(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
-  const removeMedRow = (i: number) => setMedRowsSync(p => p.filter((_, idx) => idx !== i));
-  const refreshPending = () => setPendingFees(getPendingFees());
-
-  // Close dropdowns on scroll (but not when scrolling inside the dropdown itself)
-  useEffect(() => {
-    const close = (e: Event) => {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest?.('[id^="med-dropdown-"]')) return;
-      setMedSuggestions([]);
-      setActiveMedIdx(null);
-      setHighlightedSugIdx(null);
-    };
-    window.addEventListener('scroll', close, true);
-    return () => window.removeEventListener('scroll', close, true);
-  }, []);
-
-  // ── Pathya-Apathya suggest state ──
-  const [importedDiseases, setImportedDiseases] = useState<PADisease[]>(() => getAllDiseases());
-  const [paMatches, setPaMatches]               = useState<ReturnType<typeof matchDiseasesToComplaint>>([]);
-  const [selectedPADisease, setSelectedPADisease] = useState<PADisease | null>(null);
-  const [showPAPanel, setShowPAPanel]           = useState(false);
-  const [paSent, setPaSent]                     = useState(false);
-  const [paLang, setPaLang]                     = useState<"en" | "hi" | "gu">("gu");
-
-  // ── Google Sheet state ──
-  const [sheetUrl, setSheetUrl] = useState<string>(() => localStorage.getItem(SHEET_KEY) || "");
-  const [showSheetModal, setShowSheetModal] = useState(false);
-  const [sheetInput, setSheetInput] = useState("");
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [sheetRows, setSheetRows] = useState<SheetRow[]>([]);
-  const [showSheetPicker, setShowSheetPicker] = useState(false);
-  const sheetConnected = !!sheetUrl;
-
-  // Separate refs so search always reads live DOM value
-  const mobileRef = useRef<HTMLInputElement>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
-
   const form = useForm<PatientFormValues>({
     resolver: zodResolver(patientSchema),
     defaultValues: emptyDefaults,
+    mode: 'onBlur',
   });
 
-  const complaintCodeValue = form.watch("complaintCode");
-  const visitDateValue = form.watch("visitDate");
-  const nameValue = form.watch("name");
-  const complaintValue = form.watch("complaint");
+  const refreshPending = useCallback(() => setPendingFees(getPendingFees()), []);
 
-  // Live dropdown: watch name field, search on every keystroke
-  useEffect(() => {
-    if (isPrefillingRef.current) {
-      isPrefillingRef.current = false;
-      return;
-    }
-    if (!nameValue || nameValue.length < 2) {
-      setNameSuggestions([]);
-      setShowNameDropdown(false);
-      setHighlightedNameIdx(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      const results = searchPatientSuggestions(nameValue);
-      setNameSuggestions(results);
-      setShowNameDropdown(results.length > 0);
-      setHighlightedNameIdx(null);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [nameValue]);
+  const handlePatientFound = useCallback((history: Patient[], name: string, mobile: string) => {
+    setPatientHistory(history);
+    setHistoryName(name);
+    setHistoryMobile(mobile);
+  }, []);
 
   // ── Pre-fill form from a Patient record (history click OR ?edit= URL param) ──
   const prefillFromPatient = useCallback((patient: Patient) => {
-    isPrefillingRef.current = true;
     form.reset({
       name:          patient.name,
       mobile:        patient.mobile,
@@ -528,15 +125,14 @@ export default function Home() {
       setOtherCharges(bill.otherCharges ?? 0);
       setEditBillId(bill.id);
     } else {
-      setMedRowsSync([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+      setMedRowsSync([emptyMedRow()]);
       setOtherCharges(0);
       setEditBillId(null);
     }
     setEditPatientId(patient.id);
-    setShowNameDropdown(false);
-  }, [form]);
+  }, [form, setMedRowsSync]);
 
-  // ── Edit mode: pre-fill form from /?edit=PATIENTID ──────────────────────────
+  // ── Edit mode: pre-fill form from /?edit=PATIENTID ──
   useEffect(() => {
     const pidStr = new URLSearchParams(window.location.search).get("edit");
     if (!pidStr) return;
@@ -545,233 +141,32 @@ export default function Home() {
     const patient = getPatients().find(p => p.id === pid);
     if (!patient) return;
     prefillFromPatient(patient);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [prefillFromPatient]);
 
-  useEffect(() => {
-    if (complaintCodeValue && complaintCodeValue.length >= 2) {
-      const codeRecord = findComplaintCode(complaintCodeValue);
-      if (codeRecord) {
-        form.setValue("complaint", codeRecord.complaint);
-        form.setValue("treatment", codeRecord.treatment);
-        // Auto-fill medicine rows from complaint code template
-        if (codeRecord.medicines && codeRecord.medicines.length > 0) {
-          setMedRowsSync(codeRecord.medicines.map(m => {
-            const results = searchMedicineNames(m.medicineName);
-            const match = results.find(r => r.name.toLowerCase() === m.medicineName.toLowerCase());
-            return {
-              _id: crypto.randomUUID(),
-              medicineName: m.medicineName,
-              qty: m.defaultQty ?? 0,
-              mrp: match?.bestBatch ? +match.bestBatch.mrpPerTablet.toFixed(2) : 0,
-              batchNo: match?.bestBatch?.batchNo || "",
-              billId: match?.bestBatch?.billId || "",
-              landingCostPerTablet: match?.bestBatch?.landingCostPerTablet || 0,
-            };
-          }));
-        }
-      }
-    }
-  }, [complaintCodeValue]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Stable-ref pattern: onSubmit is stable so memo'd children never get a
+  //    stale callback, but always calls the latest savePatient closure. ──
+  const savePatientRef = useRef<((data: PatientFormValues) => void) | null>(null);
+  const onSubmit = useCallback((data: PatientFormValues) => savePatientRef.current?.(data), []);
 
-  // Auto-match diseases from complaint text
-  useEffect(() => {
-    if (!complaintValue || complaintValue.length < 3) {
-      setPaMatches([]);
-      setShowPAPanel(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      const freshImported = getAllDiseases();
-      setImportedDiseases(freshImported);
-      const matches = matchDiseasesToComplaint(complaintValue, freshImported);
-      setPaMatches(matches);
-      if (matches.length > 0 && !selectedPADisease) setShowPAPanel(true);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [complaintValue]); // selectedPADisease intentionally omitted to avoid re-triggering
+  // ── Stable callbacks for cross-component keyboard focus chain ──
+  const handleAddressEnter      = useCallback(() => medicineSectionRef.current?.focusComplaintCode(), []);
+  const handleOtherChargesEnter = useCallback(() => notesSectionRef.current?.focusAdvice(), []);
+  const handleReportsEnter      = useCallback(() => form.handleSubmit(onSubmit)(), [form, onSubmit]);
+  const handleClosePendingModal = useCallback(() => setShowPendingModal(false), []);
+  const handleOpenPendingModal  = useCallback(() => setShowPendingModal(true), []);
+  const handleCloseWaModal      = useCallback(() => setWaPatient(null), []);
 
-  // Read directly from DOM ref so we always get the latest typed value
-  const runMobileLookup = useCallback(() => {
-    const mobile = (mobileRef.current?.value || form.getValues("mobile") || "").trim();
-    if (!mobile || mobile.length < 3) return;
-    setIsLookingUp(true);
-    const result = lookupByMobile(mobile);
-    if (result.latestInfo) {
-      form.setValue("name", result.latestInfo.name);
-      form.setValue("age", result.latestInfo.age || 0);
-      form.setValue("ageMonths", result.latestInfo.ageMonths || 0);
-      form.setValue("weight", result.latestInfo.weight || "");
-      form.setValue("address", result.latestInfo.address || "");
-      setHistoryName(result.latestInfo.name);
-      setHistoryMobile(mobile);
-      const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === mobile.replace(/\D/g, ""));
-      if (pendingMatch) setPendingAlert(pendingMatch);
-      toast({ title: "Patient found", description: `${result.history.length} visit(s) found.` });
-    } else {
-      setHistoryName("");
-      setHistoryMobile(mobile);
-      if (mobile.length >= 5) {
-        toast({ title: "No patient found", description: `No record for "${mobile}".` });
-      }
-    }
-    setPatientHistory(result.history);
-    setFilterMode("history");
-    setIsLookingUp(false);
-  }, [form, toast]);
-
-  const runNameLookup = useCallback(() => {
-    const name = (nameRef.current?.value || form.getValues("name") || "").trim();
-    if (!name || name.length < 2) return;
-    setIsLookingUp(true);
-    const result = lookupByName(name);
-    if (result.latestInfo) {
-      form.setValue("age", result.latestInfo.age || 0);
-      form.setValue("ageMonths", result.latestInfo.ageMonths || 0);
-      form.setValue("weight", result.latestInfo.weight || "");
-      form.setValue("address", result.latestInfo.address || "");
-      form.setValue("mobile", result.latestInfo.mobile);
-      setHistoryName(name);
-      setHistoryMobile(result.latestInfo.mobile);
-      const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === result.latestInfo!.mobile.replace(/\D/g, ""));
-      if (pendingMatch) setPendingAlert(pendingMatch);
-      toast({ title: "Patient found", description: `${result.history.length} visit(s) found.` });
-    } else {
-      setHistoryName(name);
-      setHistoryMobile("");
-      toast({ title: "No patient found", description: `No record for "${name}".` });
-    }
-    setPatientHistory(result.history);
-    setFilterMode("history");
-    setIsLookingUp(false);
-  }, [form, toast]);
-
-  // When user clicks a suggestion: autofill all fields + load history
-  const handleSelectSuggestion = useCallback((s: PatientSuggestion) => {
-    form.setValue("name", s.name);
-    form.setValue("mobile", s.mobile);
-    form.setValue("age", s.age || 0);
-    form.setValue("ageMonths", s.ageMonths || 0);
-    form.setValue("weight", s.weight || "");
-    form.setValue("address", s.address || "");
-    if (mobileRef.current) mobileRef.current.value = s.mobile;
-    if (nameRef.current) nameRef.current.value = s.name;
-    setShowNameDropdown(false);
-    const result = lookupByMobile(s.mobile);
-    setPatientHistory(result.history);
-    setHistoryName(s.name);
-    setHistoryMobile(s.mobile);
-    setFilterMode("history");
-    const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === s.mobile.replace(/\D/g, ""));
-    if (pendingMatch) setPendingAlert(pendingMatch);
-    toast({ title: "Patient found", description: `${s.visitCount} visit(s) found.` });
-  }, [form, toast]);
-
-  // ── Google Sheet handlers ──
-  const handleSaveSheet = () => {
-    const id = extractSheetId(sheetInput);
-    if (!id) {
-      toast({ title: "Invalid URL", description: "Paste the full Google Sheet URL or just the Sheet ID.", variant: "destructive" });
-      return;
-    }
-    localStorage.setItem(SHEET_KEY, id);
-    setSheetUrl(id);
-    setShowSheetModal(false);
-    toast({ title: "Google Sheet connected!", description: "Tap Sync from Sheet to load patients." });
-  };
-
-  const handleSync = async () => {
-    if (!sheetUrl) { setShowSheetModal(true); return; }
-    setIsSyncing(true);
-    try {
-      const rows = await fetchSheetRows(sheetUrl);
-      if (rows.length === 0) {
-        toast({ title: "Sheet is empty", description: "No patient rows found. Check column headers.", variant: "destructive" });
-      } else {
-        setSheetRows(rows);
-        setShowSheetPicker(true);
-      }
-    } catch (e: any) {
-      toast({ title: "Sync failed", description: e.message || "Could not reach Google Sheet.", variant: "destructive" });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handlePickRow = (row: SheetRow) => {
-    form.setValue("name", row.name);
-    form.setValue("mobile", row.mobile);
-    if (mobileRef.current) mobileRef.current.value = row.mobile;
-    if (nameRef.current) nameRef.current.value = row.name;
-    const ageNum = parseInt(row.age) || 0;
-    form.setValue("age", ageNum);
-    form.setValue("weight", row.weight || "");
-    form.setValue("address", row.address || "");
-    setShowSheetPicker(false);
-    // Also run lookup so history loads
-    if (row.mobile) {
-      const result = lookupByMobile(row.mobile);
-      setPatientHistory(result.history);
-      setHistoryName(row.name);
-      setHistoryMobile(row.mobile);
-      const pendingMatch = getPendingFees().find(e => e.patientMobile.replace(/\D/g, "") === row.mobile.replace(/\D/g, ""));
-      if (pendingMatch) setPendingAlert(pendingMatch);
-    }
-    toast({ title: "Patient filled!", description: `Details loaded for ${row.name}` });
-  };
-
-  const handleAutoCase = () => {
-    const date = form.getValues("visitDate") || todayStr;
-    const caseNo = getNextCaseNo(date);
-    form.setValue("mobile", caseNo);
-    if (mobileRef.current) mobileRef.current.value = caseNo;
-    toast({ title: "Case No. Generated", description: caseNo });
-  };
-
-  useEffect(() => {
-    if (filterMode !== "complaint" && filterMode !== "address") {
-      setFilterResults([]);
-      return;
-    }
-    if (!filterQuery || filterQuery.length < 2) {
-      setFilterResults([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      if (filterMode === "complaint") setFilterResults(lookupByComplaint(filterQuery));
-      else setFilterResults(lookupByAddress(filterQuery));
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [filterQuery, filterMode]);
-
-  const sendPathyaWhatsApp = (disease: PADisease) => {
-    const patientName = form.getValues("name") || "";
-    const mobile = form.getValues("mobile") || "";
-    const msg = buildWhatsAppMsg(disease, patientName, paLang);
-    const number = formatMobileWA(mobile);
-    const url = number
-      ? `https://wa.me/${number}?text=${encodeURIComponent(msg)}`
-      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
-    setPaSent(true);
-    setTimeout(() => setPaSent(false), 3000);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    Array.from(e.target.files || []).forEach(file => {
-      if (!file.type.startsWith("image/")) return;
-      const reader = new FileReader();
-      reader.onload = ev => setAttachments(prev => [...prev, ev.target?.result as string]);
-      reader.readAsDataURL(file);
-    });
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const savePatient = (data: PatientFormValues, registerType: "general" | "ayurvedic") => {
+  const savePatient = (data: PatientFormValues) => {
+    const registerType = "general" as const;
     const visitDate = data.visitDate || todayStr;
 
-    // Stock check before saving
     const validMedRows = medRowsRef.current.filter(r => r.medicineName.trim() && r.qty !== 0);
-    // Stock check using new inventory system
+
+    // Read the discount field's current DOM value — it may not have been blurred
+    // yet if the user submitted via keyboard shortcut while focused in that field.
+    const currentOtherCharges = medicineSectionRef.current?.flushOtherCharges() ?? otherCharges;
+
+    // Stock check
     if (validMedRows.length > 0) {
       for (const r of validMedRows) {
         if (r.billId) {
@@ -785,12 +180,10 @@ export default function Home() {
       }
     }
 
-    // Consultation fee only — otherCharges lives exclusively in bill.otherCharges
     const finalFees = Number(data.fees || 0);
 
     let saved: Patient;
     if (editPatientId) {
-      // Edit mode: overwrite existing patient record
       const updated = updatePatient(editPatientId, {
         name: data.name, mobile: data.mobile,
         age: data.age || 0, ageMonths: data.ageMonths || 0,
@@ -805,12 +198,10 @@ export default function Home() {
         return;
       }
       saved = updated;
-      // If all medicines removed in edit, delete the old bill so stock is restored
       if (editBillId && validMedRows.length === 0) {
         deletePatientBill(editPatientId);
       }
     } else {
-      // New patient
       const autoPatientNo = getNextPatientNo(visitDate);
       saved = addPatient({
         name: data.name, mobile: data.mobile, patientNo: autoPatientNo,
@@ -822,9 +213,8 @@ export default function Home() {
         attachments, registerType, visitDate,
       });
     }
-    // Save patient bill to inventory system (deducts stock, tracks profit)
-    // Save whenever there are medicines OR a charge/discount (otherCharges !== 0)
-    if (validMedRows.length > 0 || otherCharges !== 0) {
+
+    if (validMedRows.length > 0 || currentOtherCharges !== 0) {
       const items: PatientMedicineItem[] = validMedRows.map(r => {
         const salePrice = r.mrp * r.qty;
         const cost = r.landingCostPerTablet * r.qty;
@@ -840,30 +230,29 @@ export default function Home() {
           profit: salePrice - cost,
         };
       });
-      // items may be [] when otherCharges-only — reduce on empty array safely returns 0
       const medSale   = items.reduce((s, i) => s + i.salePrice, 0);
       const medCost   = items.reduce((s, i) => s + i.cost, 0);
-      const medProfit = items.reduce((s, i) => s + i.profit, 0);
       const patientBill: PatientBill = {
         id: editBillId ?? newId(),
         patientId: saved.id,
         patientName: saved.name,
         doctorId: activeDoctor?.id || 1,
         billDate: visitDate,
-        items,                              // [] when no medicines
-        otherCharges: otherCharges ?? 0,
-        totalSale:   Math.ceil(medSale + (otherCharges ?? 0)),
+        items,
+        otherCharges: currentOtherCharges,
+        totalSale:   Math.ceil(medSale + currentOtherCharges),
         totalCost:   medCost,
-        totalProfit: Math.ceil(medSale + (otherCharges ?? 0)) - medCost,
+        totalProfit: Math.ceil(medSale + currentOtherCharges) - medCost,
         createdAt: new Date().toISOString(),
       };
       savePatientBill(patientBill);
     }
 
     if (feesMarkedPending) {
-      // billTotal = medicine bill when present, otherwise consultation fee
-      const hasMeds = medRowsRef.current.some(r => r.medicineName.trim());
-      const billTotal = hasMeds ? billAmount : finalFees;
+      const medGross = validMedRows.reduce((s, r) => s + r.mrp * r.qty, 0);
+      const billTotal = validMedRows.length > 0
+        ? Math.ceil(medGross + currentOtherCharges)
+        : finalFees;
       const paid = pendingAmount.trim() !== "" ? Math.max(0, Number(pendingAmount) || 0) : 0;
       const pendingAmt = Math.round(billTotal - paid);
       if (pendingAmt > 0) {
@@ -880,14 +269,11 @@ export default function Home() {
         refreshPending();
       }
     }
+
     setFeesMarkedPending(false);
     setPendingAmount("");
     setLastSaved(saved);
-    setFeesMarkedPending(false);
-    toast({
-      title: "Saved!",
-      description: registerType === "ayurvedic" ? "Saved to Ayurvedic Register." : "Saved to Daily Register.",
-    });
+    toast({ title: "Saved!", description: "Saved to Daily Register." });
     form.reset({ ...emptyDefaults, visitDate });
     if (mobileRef.current) mobileRef.current.value = "";
     if (nameRef.current) nameRef.current.value = "";
@@ -895,30 +281,15 @@ export default function Home() {
     setPatientHistory([]);
     setHistoryName("");
     setHistoryMobile("");
-    setMedRowsSync([{ _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
+    setMedRowsSync([emptyMedRow()]);
     setOtherCharges(0);
     setEditPatientId(null);
     setEditBillId(null);
-    setSelectedPADisease(null);
-    setPaMatches([]);
-    setShowPAPanel(false);
     setTimeout(() => mobileRef.current?.focus(), 50);
   };
 
-  const onSubmit = (data: PatientFormValues) => savePatient(data, "general");
-  const onSaveAyurvedic = () => form.handleSubmit(data => savePatient(data, "ayurvedic"))();
-
-  // Register mobile/name with RHF but also attach our DOM ref
-  const { ref: mobileRHFRef, ...mobileRest } = form.register("mobile");
-  const { ref: nameRHFRef, ...nameRest } = form.register("name");
-  const { ref: ageRHFRef, ...ageRest } = form.register("age");
-  const { ref: ageMonthsRHFRef, ...ageMonthsRest } = form.register("ageMonths");
-  const { ref: weightRHFRef, ...weightRest } = form.register("weight");
-  const { ref: addressRHFRef, ...addressRest } = form.register("address");
-  const { ref: complaintCodeRHFRef, ...complaintCodeRest } = form.register("complaintCode");
-  const { ref: complaintRHFRef, ...complaintRest } = form.register("complaint");
-  const { ref: adviceRHFRef, ...adviceRest } = form.register("advice");
-  const { ref: reportsRHFRef, ...reportsRest } = form.register("reports");
+  // Keep ref pointing to latest savePatient so the stable onSubmit always works
+  savePatientRef.current = savePatient;
 
   return (
     <Layout>
@@ -928,806 +299,57 @@ export default function Home() {
         {/* ── MAIN FORM ── */}
         <div className="lg:col-span-8 space-y-6">
           <div className="medical-card p-6 md:p-8">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                <User className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-display text-slate-900">Patient Registration</h2>
-                <p className="text-slate-500 text-sm">Register a new visit and view medical history.</p>
-              </div>
-              {/* Sheet action buttons */}
-              <div className="ml-auto flex items-center gap-2">
-                <button type="button" onClick={handleSync}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-all shadow">
-                  {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Sync from Sheet
-                </button>
-                <button type="button" onClick={() => { setSheetInput(sheetUrl); setShowSheetModal(true); }}
-                  title="Connect Google Sheet"
-                  className="p-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-all">
-                  <Sheet className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Sheet connected banner */}
-            {sheetConnected && (
-              <div className="mb-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
-                <span><strong>Google Sheet connected.</strong> Press "Sync from Sheet" to load today's patients.</span>
-              </div>
-            )}
-
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Visit Date */}
-              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-slate-400" /> Visit Date
-                    </label>
-                    <input type="date" {...form.register("visitDate")}
-                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" />
-                  </div>
-                </div>
+              <PatientInfoForm
+                form={form}
+                mobileRef={mobileRef}
+                nameRef={nameRef}
+                pendingAlert={pendingAlert}
+                setPendingAlert={setPendingAlert}
+                refreshPending={refreshPending}
+                onPatientFound={handlePatientFound}
+                onAddressEnter={handleAddressEnter}
+              />
 
-                {/* Mobile / Case No */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-slate-400" /> Mobile / Case No. <span className="text-red-500">*</span>
-                    </label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <input
-                          {...mobileRest}
-                          ref={(el) => {
-                            mobileRHFRef(el);
-                            (mobileRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === "Enter") { e.preventDefault(); runMobileLookup(); nameRef.current?.focus(); }
-                          }}
-                          className="w-full pl-4 pr-10 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800 font-mono"
-                          placeholder="Mobile or Case No."
-                        />
-                        {isLookingUp && <Loader2 className="w-4 h-4 absolute right-3 top-3.5 animate-spin text-slate-400" />}
-                      </div>
-                      <button type="button" onClick={runMobileLookup}
-                        className="px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 hover:bg-primary/10 hover:text-primary hover:border-primary/20 transition-all" title="Search">
-                        <Search className="w-4 h-4" />
-                      </button>
-                      <button type="button" onClick={handleAutoCase} title="Auto-generate case number"
-                        className="px-3 py-2 rounded-xl bg-purple-600 text-white font-semibold text-xs hover:bg-purple-700 transition-all flex items-center gap-1 shadow whitespace-nowrap">
-                        <Zap className="w-3.5 h-3.5" /> Auto
-                      </button>
-                    </div>
-                    {form.formState.errors.mobile && <p className="text-destructive text-xs">{form.formState.errors.mobile.message}</p>}
-                    <p className="text-xs text-slate-400">
-                      Case format: <span className="font-mono text-purple-600">00{format(new Date(visitDateValue || todayStr), "ddMMyy")}01</span>
-                      &nbsp;· Press <kbd className="px-1 py-0.5 bg-slate-100 rounded text-[10px]">Enter</kbd> or <Search className="w-3 h-3 inline" /> to search
-                    </p>
-                  </div>
+              <MedicineBillingSection
+                ref={medicineSectionRef}
+                form={form}
+                medRows={medRows}
+                setMedRows={setMedRowsSync}
+                otherCharges={otherCharges}
+                setOtherCharges={setOtherCharges}
+                feesMarkedPending={feesMarkedPending}
+                setFeesMarkedPending={setFeesMarkedPending}
+                pendingAmount={pendingAmount}
+                setPendingAmount={setPendingAmount}
+                onOtherChargesEnter={handleOtherChargesEnter}
+              />
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      <User className="w-4 h-4 text-slate-400" /> Patient Name <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <div className="flex gap-2">
-                        <input
-                          {...nameRest}
-                          ref={(el) => {
-                            nameRHFRef(el);
-                            (nameRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === "ArrowDown" && showNameDropdown && nameSuggestions.length > 0) {
-                              e.preventDefault();
-                              setHighlightedNameIdx(prev => prev === null ? 0 : Math.min(prev + 1, nameSuggestions.length - 1));
-                              return;
-                            }
-                            if (e.key === "ArrowUp" && showNameDropdown && nameSuggestions.length > 0) {
-                              e.preventDefault();
-                              setHighlightedNameIdx(prev => prev === null ? nameSuggestions.length - 1 : Math.max(prev - 1, 0));
-                              return;
-                            }
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              if (showNameDropdown && highlightedNameIdx !== null && nameSuggestions[highlightedNameIdx]) {
-                                handleSelectSuggestion(nameSuggestions[highlightedNameIdx]);
-                                setHighlightedNameIdx(null);
-                              } else {
-                                setShowNameDropdown(false);
-                                setHighlightedNameIdx(null);
-                                ageRef.current?.focus();
-                              }
-                              return;
-                            }
-                            if (e.key === "Escape") { setShowNameDropdown(false); setHighlightedNameIdx(null); }
-                          }}
-                          onBlur={() => setTimeout(() => setShowNameDropdown(false), 200)}
-                          className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800"
-                          placeholder="Full Name"
-                        />
-                        <button type="button" onClick={runNameLookup}
-                          className="px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 hover:bg-primary/10 hover:text-primary hover:border-primary/20 transition-all" title="Search by name">
-                          <Search className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* Live patient suggestions dropdown */}
-                      {showNameDropdown && nameSuggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-y-auto" style={{ zIndex: 9999, maxHeight: "280px" }}>
-                          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-                            <Search className="w-3 h-3 text-slate-400" />
-                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                              {nameSuggestions.length} patient{nameSuggestions.length > 1 ? "s" : ""} found
-                            </span>
-                          </div>
-                          {nameSuggestions.map((s, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              ref={el => { if (el && i === highlightedNameIdx) el.scrollIntoView({ block: "nearest" }); }}
-                              onMouseDown={e => { e.preventDefault(); setHighlightedNameIdx(null); handleSelectSuggestion(s); }}
-                              onMouseEnter={() => setHighlightedNameIdx(i)}
-                              className={`w-full px-4 py-3 transition-colors text-left border-b border-slate-50 last:border-0 ${i === highlightedNameIdx ? "bg-blue-50" : "hover:bg-blue-50"}`}
-                            >
-                              <div className="flex items-start gap-3">
-                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0 mt-0.5">
-                                  <User className="w-3.5 h-3.5" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-slate-900 text-sm truncate">{s.name}</span>
-                                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full shrink-0">
-                                      {s.visitCount} visit{s.visitCount > 1 ? "s" : ""}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-xs font-mono text-slate-500">{s.mobile}</span>
-                                    {s.age > 0 && <span className="text-xs text-slate-400">{s.age}y</span>}
-                                    {s.address && <span className="text-xs text-slate-400 truncate max-w-[100px]">· {s.address}</span>}
-                                  </div>
-                                  {s.recentVisits[0] && (
-                                    <div className="mt-1 text-[10px] text-slate-400">
-                                      <span className="font-semibold text-slate-500">{format(new Date(s.recentVisits[0].visitDate), "dd MMM yyyy")}</span>
-                                      {s.recentVisits[0].complaint && <span className="ml-1">· {s.recentVisits[0].complaint.slice(0, 40)}</span>}
-                                    </div>
-                                  )}
-                                </div>
-                                <span className="text-[10px] text-primary font-bold shrink-0 mt-1">Fill →</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {form.formState.errors.name && <p className="text-destructive text-xs">{form.formState.errors.name.message}</p>}
-                  </div>
-                </div>
-
-                {/* Age + Weight + Address */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Age <span className="text-slate-400 text-xs">(optional)</span></label>
-                    <div className="flex gap-2">
-                      <div className="flex-1 relative">
-                        <input type="number" {...ageRest} min={0}
-                          ref={el => { ageRHFRef(el); ageRef.current = el; }}
-                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); ageMonthsRef.current?.focus(); } }}
-                          className="w-full px-3 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="0" />
-                        <span className="absolute right-2 top-3.5 text-xs text-slate-400">yrs</span>
-                      </div>
-                      <div className="w-20 relative">
-                        <input type="number" {...ageMonthsRest} min={0} max={11}
-                          ref={el => { ageMonthsRHFRef(el); ageMonthsRef.current = el; }}
-                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); weightRef.current?.focus(); } }}
-                          className="w-full px-2 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="0" />
-                        <span className="absolute right-2 top-3.5 text-xs text-slate-400">mo</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      <Weight className="w-4 h-4 text-slate-400" /> Weight
-                    </label>
-                    <input {...weightRest}
-                      ref={el => { weightRHFRef(el); weightRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addressRef.current?.focus(); } }}
-                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="e.g. 65 kg" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-slate-400" /> Address
-                    </label>
-                    <input {...addressRest}
-                      ref={el => { addressRHFRef(el); addressRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); complaintCodeRef.current?.focus(); } }}
-                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all text-slate-800" placeholder="City / Area" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Medical Details */}
-              <div className="bg-blue-50/30 p-6 rounded-2xl border border-blue-100 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      <Activity className="w-4 h-4 text-slate-400" /> Complaint Code
-                    </label>
-                    <input {...complaintCodeRest}
-                      ref={el => { complaintCodeRHFRef(el); complaintCodeRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); complaintRef.current?.focus(); } }}
-                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 uppercase transition-all text-slate-800"
-                      placeholder="E.G. CCF" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">
-                      Bill Amount (₹)
-                      {medRows.length > 0 && <span className="ml-2 text-xs text-green-600 font-normal">auto from medicines</span>}
-                    </label>
-                    <div className="flex gap-2 items-center">
-                      <input type="number"
-                        value={medRows.length > 0 ? billAmount : undefined}
-                        readOnly={medRows.length > 0}
-                        {...(medRows.length === 0 ? form.register("fees") : {})}
-                        min={0}
-                        className={`flex-1 px-4 py-3 rounded-xl border focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-semibold text-slate-900 ${medRows.length > 0 ? "bg-green-50 border-green-300 cursor-not-allowed" : "bg-white border-slate-200"}`}
-                        placeholder="Amount" />
-                      <button type="button"
-                        onClick={() => setFeesMarkedPending(p => !p)}
-                        title={feesMarkedPending ? "Click to unmark pending" : "Mark fees as pending"}
-                        className={`shrink-0 flex items-center gap-1.5 px-3 py-3 rounded-xl border font-semibold text-xs transition-all ${
-                          feesMarkedPending
-                            ? "bg-amber-100 border-amber-400 text-amber-700 shadow-inner"
-                            : "bg-white border-slate-200 text-slate-400 hover:border-amber-300 hover:text-amber-500"
-                        }`}>
-                        <Hourglass className="w-4 h-4" />
-                        {feesMarkedPending ? "Pending" : "Mark Pending"}
-                      </button>
-                    </div>
-                    {feesMarkedPending && (() => {
-                      const hasMeds = medRows.some(r => r.medicineName.trim());
-                      const billTotal = hasMeds ? billAmount : (Number(form.watch("fees")) || 0);
-                      const paid = pendingAmount.trim() !== "" ? Math.max(0, Number(pendingAmount) || 0) : 0;
-                      const pendingAmt = Math.round(billTotal - paid);
-                      return (
-                        <div className="mt-2 space-y-2">
-                          <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                            <Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <div className="flex-1">
-                              <p className="text-xs font-bold text-amber-700 mb-1">
-                                Amount Paid Now (&#8377;) — Bill Total: &#8377;{billTotal}
-                              </p>
-                              <input
-                                type="number" min={0}
-                                value={pendingAmount}
-                                onChange={e => setPendingAmount(e.target.value)}
-                                placeholder="0 — leave blank if nothing paid"
-                                className="w-full px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-sm font-bold text-amber-800 focus:outline-none focus:border-amber-500 placeholder:text-amber-300 placeholder:font-normal"
-                              />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs">
-                            <span className="flex items-center gap-1 text-emerald-600 font-bold">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> Paid: &#8377;{paid}
-                            </span>
-                            <span className="text-slate-300">|</span>
-                            <span className={`flex items-center gap-1 font-bold ${pendingAmt > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                              <Hourglass className="w-3.5 h-3.5" /> Pending: &#8377;{Math.max(0, pendingAmt)}
-                            </span>
-                          </div>
-                          {pendingAmt <= 0 && paid > 0 && (
-                            <p className="text-xs text-emerald-600 px-1 font-semibold">✓ Fully paid — nothing will be saved as pending</p>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700">Presenting Complaints</label>
-                  <textarea {...complaintRest}
-                    ref={el => { complaintRHFRef(el); complaintRef.current = el; }}
-                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); (medInputRefs.current[0] ?? otherChargesRef.current)?.focus(); } }}
-                    rows={2}
-                    className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Describe the symptoms..." />
-                </div>
-
-                {/* ── Pathya-Apathya Disease Suggest Panel ── */}
-                <AnimatePresence>
-                  {paMatches.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      className="rounded-2xl border border-emerald-200 bg-emerald-50/60 overflow-hidden"
-                    >
-                      {/* Header */}
-                      <div className="flex items-center gap-2 px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => setShowPAPanel(p => !p)}
-                          className="flex items-center gap-2 flex-1 min-w-0"
-                        >
-                          <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">
-                            <Leaf className="w-3.5 h-3.5 text-white" />
-                          </div>
-                          <span className="text-sm font-bold text-emerald-800">
-                            Pathya-Apathya Suggestions
-                          </span>
-                          <span className="text-xs font-semibold bg-emerald-200 text-emerald-700 px-2 py-0.5 rounded-full ml-1 shrink-0">
-                            {paMatches.length} match{paMatches.length > 1 ? "es" : ""}
-                          </span>
-                        </button>
-                        {/* Language selector */}
-                        <div className="flex items-center gap-1 shrink-0 ml-auto">
-                          {(["gu", "hi", "en"] as const).map(l => (
-                            <button
-                              key={l}
-                              type="button"
-                              onClick={() => setPaLang(l)}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                                paLang === l
-                                  ? "bg-emerald-600 text-white shadow-sm"
-                                  : "bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50"
-                              }`}
-                            >
-                              {l === "gu" ? "ગુ" : l === "hi" ? "हि" : "EN"}
-                            </button>
-                          ))}
-                        </div>
-                        <ChevronDown
-                          onClick={() => setShowPAPanel(p => !p)}
-                          className={`w-4 h-4 text-emerald-600 transition-transform cursor-pointer shrink-0 ${showPAPanel ? "rotate-180" : ""}`}
-                        />
-                      </div>
-
-                      <AnimatePresence>
-                        {showPAPanel && (
-                          <motion.div
-                            initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="px-4 pb-4 space-y-3">
-                              {/* Disease chips */}
-                              <div className="flex flex-wrap gap-2">
-                                {paMatches.map((m, i) => {
-                                  const name = m.disease?.nameEn || m.builtin?.nameEn || "";
-                                  const isSelected = selectedPADisease?.id === (m.disease?.id || m.builtin?.id);
-                                  // Only imported diseases have full data for preview
-                                  const hasFullData = !!m.disease;
-                                  return (
-                                    <button
-                                      key={i}
-                                      type="button"
-                                      onClick={() => {
-                                        if (m.disease) {
-                                          setSelectedPADisease(isSelected ? null : m.disease);
-                                        } else {
-                                          toast({ title: "Open Pathya-Apathya tab", description: `"${name}" data is in the Pathya-Apathya section. Import it to send via WhatsApp.` });
-                                        }
-                                      }}
-                                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-                                        isSelected
-                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
-                                          : hasFullData
-                                          ? "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-100"
-                                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                                      }`}
-                                    >
-                                      <Stethoscope className="w-3 h-3" />
-                                      {name}
-                                      {!hasFullData && <span className="text-[9px] text-slate-400 ml-0.5">(built-in)</span>}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {/* Selected disease full preview + WhatsApp */}
-                              <AnimatePresence>
-                                {selectedPADisease && (
-                                  <motion.div
-                                    initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                                    className="bg-white rounded-xl border border-emerald-200 overflow-hidden"
-                                  >
-                                    {/* Disease header */}
-                                    <div className="flex items-center justify-between px-4 py-3 bg-emerald-600">
-                                      <div>
-                                        <p className="font-bold text-white text-sm">
-                                          {paLang === "gu" ? (selectedPADisease.nameGu || selectedPADisease.nameEn)
-                                            : paLang === "hi" ? (selectedPADisease.nameHi || selectedPADisease.nameEn)
-                                            : selectedPADisease.nameEn}
-                                        </p>
-                                        <p className="text-emerald-100 text-xs">{selectedPADisease.nameEn}</p>
-                                      </div>
-                                      <button type="button" onClick={() => setSelectedPADisease(null)} className="text-white/70 hover:text-white">
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    </div>
-
-                                    <div className="p-4 space-y-3 max-h-60 overflow-y-auto text-xs">
-                                      {(() => {
-                                        const pathyaList = paLang === "gu" ? selectedPADisease.pathyaGu : paLang === "hi" ? selectedPADisease.pathyaHi : selectedPADisease.pathyaEn;
-                                        const apathyaList = paLang === "gu" ? selectedPADisease.apathyaGu : paLang === "hi" ? selectedPADisease.apathyaHi : selectedPADisease.apathyaEn;
-                                        const pathyaLabel = paLang === "gu" ? "પથ્ય — શું ખાવું" : paLang === "hi" ? "पथ्य — क्या खाएं" : "Pathya — What to Eat";
-                                        const apathyaLabel = paLang === "gu" ? "અપથ્ય — શું ન ખાવું" : paLang === "hi" ? "अपथ्य — क्या न खाएं" : "Apathya — What to Avoid";
-                                        return (
-                                          <>
-                                            {pathyaList.length > 0 && (
-                                              <div>
-                                                <p className="font-bold text-emerald-700 mb-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> {pathyaLabel}</p>
-                                                <ul className="space-y-0.5 text-slate-600">
-                                                  {pathyaList.slice(0, 5).map((p, i) => (
-                                                    <li key={i} className="flex gap-1"><span className="text-emerald-500 shrink-0">•</span>{p}</li>
-                                                  ))}
-                                                  {pathyaList.length > 5 && <li className="text-slate-400">+{pathyaList.length - 5} more...</li>}
-                                                </ul>
-                                              </div>
-                                            )}
-                                            {apathyaList.length > 0 && (
-                                              <div>
-                                                <p className="font-bold text-red-600 mb-1 flex items-center gap-1"><X className="w-3 h-3" /> {apathyaLabel}</p>
-                                                <ul className="space-y-0.5 text-slate-600">
-                                                  {apathyaList.slice(0, 4).map((a, i) => (
-                                                    <li key={i} className="flex gap-1"><span className="text-red-400 shrink-0">•</span>{a}</li>
-                                                  ))}
-                                                  {apathyaList.length > 4 && <li className="text-slate-400">+{apathyaList.length - 4} more...</li>}
-                                                </ul>
-                                              </div>
-                                            )}
-                                          </>
-                                        );
-                                      })()}
-                                    </div>
-
-                                    {/* WhatsApp send bar */}
-                                    <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center gap-3">
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-xs text-slate-500">
-                                          {form.getValues("mobile")
-                                            ? <span>Will send to <strong className="text-slate-700 font-mono">{form.getValues("mobile")}</strong></span>
-                                            : <span className="text-amber-600">Fill mobile number to send directly</span>
-                                          }
-                                        </p>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => sendPathyaWhatsApp(selectedPADisease)}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all shadow-sm ${
-                                          paSent
-                                            ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                                            : "bg-[#25D366] hover:bg-[#1ebe5b] text-white shadow-green-200 shadow-md"
-                                        }`}
-                                      >
-                                        <MessageSquare className="w-4 h-4" />
-                                        {paSent ? "Sent! ✓" : "Send on WhatsApp"}
-                                      </button>
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* ── Medicine Table ── */}
-                <div className="space-y-2">
-                  {/* Medicine Table Header */}
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      💊 Medicines
-                      {medGross > 0 && <span className="text-xs text-green-600 font-normal">Gross: ₹{medGross.toFixed(2)}</span>}
-                    </label>
-                  </div>
-
-                  {/* Visual Infosoft style table */}
-                  <div className="rounded-xl overflow-visible border border-slate-300 shadow-sm">
-                    <table className="w-full text-sm border-collapse">
-                      <thead>
-                        <tr className="bg-slate-700 text-white">
-                          <th className="px-3 py-2 text-left font-semibold text-xs w-8">No</th>
-                          <th className="px-2 py-2 text-left font-semibold text-xs">Item Name</th>
-                          <th className="px-2 py-2 text-left font-semibold text-xs w-24">Batch</th>
-                          <th className="px-2 py-2 text-right font-semibold text-xs w-16">Qty</th>
-                          <th className="px-2 py-2 text-right font-semibold text-xs w-24">MRP/Tab</th>
-                          <th className="px-2 py-2 text-right font-semibold text-xs w-24">Amount</th>
-                          <th className="px-2 py-2 w-8"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {medRows.map((r, i) => (
-                            <tr key={r._id} className={`border-b border-slate-200 transition-colors hover:bg-blue-50/40
-                              ${hasMultipleBatches(r.medicineName)
-                                ? "bg-orange-50/60 border-l-2 border-l-orange-400"
-                                : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
-                              <td className="px-3 py-1 text-slate-500 text-xs font-medium">{i + 1}</td>
-                              <td className="px-2 py-1">
-                                <div className="relative">
-                                  {hasMultipleBatches(r.medicineName) && (
-                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs bg-orange-100 text-orange-600 font-semibold px-1.5 py-0.5 rounded-full z-10 pointer-events-none">
-                                      2 MRP
-                                    </span>
-                                  )}
-                                  <input value={r.medicineName}
-                                    ref={el => { medInputRefs.current[i] = el; }}
-                                    onChange={e => {
-                                      const val = e.target.value;
-                                      updateMedRow(i, "medicineName", val);
-                                      updateMedRow(i, "mrp", 0);
-                                      const rect = e.currentTarget.getBoundingClientRect();
-                                      setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
-                                      if (medSearchTimerRef.current) clearTimeout(medSearchTimerRef.current);
-                                      medSearchTimerRef.current = setTimeout(() => {
-                                        setActiveMedIdx(i);
-                                        setHighlightedSugIdx(null);
-                                        setMedSuggestions(getMedSuggestions(val));
-                                      }, 220);
-                                    }}
-                                    onFocus={(e) => {
-                                      const rect = e.currentTarget.getBoundingClientRect();
-                                      setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
-                                      setActiveMedIdx(i);
-                                      setHighlightedSugIdx(null);
-                                      if (r.medicineName) setMedSuggestions(getMedSuggestions(r.medicineName));
-                                    }}
-                                    onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }, 150)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Escape") { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); return; }
-                                      if (e.key === "ArrowDown" && medSuggestions.length > 0) {
-                                        e.preventDefault();
-                                        setHighlightedSugIdx(prev => prev === null ? 0 : Math.min(prev + 1, medSuggestions.length - 1));
-                                        return;
-                                      }
-                                      if (e.key === "ArrowUp" && medSuggestions.length > 0) {
-                                        e.preventDefault();
-                                        setHighlightedSugIdx(prev => prev === null ? medSuggestions.length - 1 : Math.max(prev - 1, 0));
-                                        return;
-                                      }
-                                      if (e.key === "Enter" && medSuggestions.length === 0) {
-                                        e.preventDefault();
-                                        medQtyRefs.current[i]?.focus();
-                                        return;
-                                      }
-                                      if (e.key === "Enter" && medSuggestions.length > 0) {
-                                        e.preventDefault();
-                                        const s = medSuggestions[highlightedSugIdx ?? 0];
-                                        setMedRowsSync(p => p.map((r, idx) => idx === i ? {
-                                          ...r, medicineName: s.name, qty: 0, mrp: +s.mrpPerTablet.toFixed(2),
-                                          batchNo: s.bestBatch?.batchNo || "",
-                                          billId: s.bestBatch?.billId || "",
-                                          landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
-                                        } : r));
-                                        medRowsRef.current = medRowsRef.current.map((r, idx) => idx === i ? {
-                                          ...r, medicineName: s.name, qty: 0, mrp: +s.mrpPerTablet.toFixed(2),
-                                          batchNo: s.bestBatch?.batchNo || "",
-                                          billId: s.bestBatch?.billId || "",
-                                          landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
-                                        } : r);
-                                        setMedSuggestions([]);
-                                        setActiveMedIdx(null);
-                                        setHighlightedSugIdx(null);
-                                        setTimeout(() => medQtyRefs.current[i]?.focus(), 0);
-                                      }
-                                    }}
-                                    placeholder="Type medicine name..."
-                                    autoComplete="off"
-                                    className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                                  {activeMedIdx === i && medSuggestions.length > 0 && (
-                                    <div style={medDropdownStyle}
-                                      id={`med-dropdown-${i}`}>
-                                      {medSuggestions.map((s, si) => (
-                                        <button key={si} type="button"
-                                          ref={el => { if (el && si === highlightedSugIdx) el.scrollIntoView({ block: "nearest" }); }}
-                                          onMouseEnter={() => setHighlightedSugIdx(si)}
-                                          onMouseDown={(e) => {
-                                            e.preventDefault();
-                                            setMedRowsSync(p => p.map((r, idx) => idx === i ? {
-                                              ...r,
-                                              medicineName: s.name, qty: 0,
-                                              mrp: +s.mrpPerTablet.toFixed(2),
-                                              batchNo: s.bestBatch?.batchNo || "",
-                                              billId: s.bestBatch?.billId || "",
-                                              landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
-                                            } : r));
-                                            medRowsRef.current = medRowsRef.current.map((r, idx) => idx === i ? {
-                                              ...r,
-                                              medicineName: s.name, qty: 0,
-                                              mrp: +s.mrpPerTablet.toFixed(2),
-                                              batchNo: s.bestBatch?.batchNo || "",
-                                              billId: s.bestBatch?.billId || "",
-                                              landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
-                                            } : r);
-                                            setMedSuggestions([]);
-                                            setActiveMedIdx(null);
-                                            setHighlightedSugIdx(null);
-                                            setTimeout(() => medQtyRefs.current[i]?.focus(), 0);
-                                          }}
-                                          className={`w-full text-left px-3 py-2.5 text-xs flex items-center justify-between gap-2 border-b border-slate-50 last:border-0 ${si === highlightedSugIdx ? "bg-blue-50" : "hover:bg-blue-50"} ${si === 0 ? "rounded-t-lg" : ""}`}>
-                                          <span className="font-semibold text-slate-800">{s.name}</span>
-                                          <span className="text-slate-500 shrink-0 text-right">
-                                            <span className="text-primary font-medium">₹{s.mrpPerTablet.toFixed(2)}/tab</span>
-                                            <span className={`ml-2 ${s.currentStock <= 0 ? "text-red-500" : "text-green-600"}`}>
-                                              {s.currentStock <= 0 ? "OUT" : `${s.currentStock} tabs`}
-                                            </span>
-                                          </span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 min-w-[90px]">
-                                {r.medicineName ? (() => {
-                                  const batches = getAvailableBatchesForMedicine(r.medicineName);
-                                  const selBatch = batches.find(b => b.batchNo === r.batchNo);
-                                  return (
-                                    <div>
-                                      <select value={r.batchNo}
-                                        onChange={e => {
-                                          const sel = batches.find(b => b.batchNo === e.target.value);
-                                          if (sel) {
-                                            const updated = { batchNo: sel.batchNo, billId: sel.billId, mrp: +sel.mrpPerTablet.toFixed(2), landingCostPerTablet: sel.landingCostPerTablet };
-                                            setMedRowsSync(p => p.map((x, idx) => idx === i ? { ...x, ...updated } : x));
-                                            medRowsRef.current = medRowsRef.current.map((x, idx) => idx === i ? { ...x, ...updated } : x);
-                                          }
-                                        }}
-                                        className="w-full border border-slate-300 rounded px-1 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-primary/50">
-                                        {batches.map(b => (
-                                          <option key={b.batchNo} value={b.batchNo}>{b.batchNo} ({b.tabletsAvailable})</option>
-                                        ))}
-                                        {!batches.length && r.batchNo && <option value={r.batchNo}>{r.batchNo}</option>}
-                                      </select>
-                                      {selBatch && (
-                                        <span className={`text-[10px] font-mono block mt-0.5 ${selBatch.expiryStatus === "expired" ? "text-red-500 font-bold" : selBatch.expiryStatus === "critical" ? "text-orange-500" : "text-slate-400"}`}>
-                                          Exp: {formatExpiry(selBatch.expiryDate)}
-                                        </span>
-                                      )}
-                                    </div>
-                                  );
-                                })() : <span className="text-slate-300 text-xs">—</span>}
-                              </td>
-                              <td className="px-2 py-1">
-                                <input type="number" value={r.qty}
-                                  ref={el => { medQtyRefs.current[i] = el; }}
-                                  onChange={e => updateMedRow(i, "qty", Number(e.target.value))}
-                                  onKeyDown={e => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      const nextIdx = i + 1;
-                                      if (nextIdx < medRows.length) {
-                                        medInputRefs.current[nextIdx]?.focus();
-                                      } else {
-                                        setMedRowsSync(p => [...p, { _id: crypto.randomUUID(), medicineName: "", qty: 0, mrp: 0, batchNo: "", billId: "", landingCostPerTablet: 0 }]);
-                                        setTimeout(() => medInputRefs.current[nextIdx]?.focus(), 50);
-                                      }
-                                    }
-                                  }}
-                                  className="w-16 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white" />
-                              </td>
-                              <td className="px-2 py-1">
-                                <input type="number" step="0.01" value={r.mrp || ""}
-                                  onChange={e => updateMedRow(i, "mrp", Number(e.target.value))}
-                                  placeholder="0.00"
-                                  className="w-20 border border-slate-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white" />
-                              </td>
-                              <td className="px-2 py-1 text-right font-bold text-slate-800 text-xs">
-                                {r.mrp > 0 ? `₹${(r.mrp * r.qty).toFixed(2)}` : "—"}
-                              </td>
-                              <td className="px-2 py-1 text-center">
-                                <button type="button" onClick={() => removeMedRow(i)}
-                                  className="text-red-400 hover:text-red-600">✕</button>
-                              </td>
-                            </tr>
-                          ))}
-                          {/* Empty row — always visible for adding new medicine */}
-                          <tr className="border-b border-slate-200 bg-white hover:bg-blue-50/40 cursor-pointer" onClick={addMedRow}>
-                            <td className="px-3 py-2 text-slate-300 text-xs">{medRows.length + 1}</td>
-                            <td className="px-2 py-2" colSpan={4}>
-                              <span className="text-slate-400 text-xs">+ Click to add medicine...</span>
-                            </td>
-                            <td className="px-2 py-2 text-right text-slate-300 text-xs">—</td>
-                            <td></td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      {/* Summary row */}
-                      <div className="bg-slate-700 border-t border-slate-600 px-4 py-2.5 flex items-center justify-between gap-4 rounded-b-xl flex-wrap">
-                        <div className="flex items-center gap-3 text-xs flex-wrap">
-                          <span className="text-white/70">Med Gross: <strong className="text-white">₹{medGross.toFixed(2)}</strong></span>
-                          <span className="text-white/30">|</span>
-                          <div className="flex items-center gap-1.5">
-                            <label className="text-white/70 whitespace-nowrap">Procedure / Discount:</label>
-                            <input type="number" value={otherCharges || ""}
-                              ref={otherChargesRef}
-                              onChange={e => setOtherCharges(Number(e.target.value))}
-                              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); adviceRef.current?.focus(); } }}
-                              className="w-24 border border-white/20 rounded px-2 py-1 text-xs text-right focus:outline-none bg-white/10 text-white placeholder-white/30"
-                              placeholder="0" />
-                            <span className="text-white/40 text-xs">(-=discount +procedure)</span>
-                          </div>
-                        </div>
-                        <div className="text-base font-bold text-white whitespace-nowrap">
-                          Bill Total: ₹{billAmount.toFixed(2)}
-                        </div>
-                      </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">
-                      Advice / Notes
-                      <span className="text-slate-400 font-normal text-xs ml-2">— F5 = follow-up after 5 days</span>
-                    </label>
-                    <textarea {...adviceRest}
-                      ref={el => { adviceRHFRef(el); adviceRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); reportsRef.current?.focus(); } }}
-                      rows={2}
-                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="F5 · Rest, diet..." />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Reports Required</label>
-                    <textarea {...reportsRest}
-                      ref={el => { reportsRHFRef(el); reportsRef.current = el; }}
-                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); form.handleSubmit(onSubmit)(); } }}
-                      rows={2}
-                      className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none text-slate-800" placeholder="Blood test, X-ray..." />
-                  </div>
-                </div>
-                {/* Attachments */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                    <Paperclip className="w-4 h-4 text-slate-400" /> Attach Report Images
-                  </label>
-                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-all"
-                    onClick={() => fileInputRef.current?.click()}>
-                    <Paperclip className="w-6 h-6 text-slate-300" />
-                    <p className="text-sm text-slate-400">Click to upload image reports</p>
-                  </div>
-                  <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileUpload} />
-                  {attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-3 mt-2">
-                      {attachments.map((src, i) => (
-                        <div key={i} className="relative group">
-                          <img src={src} className="w-20 h-20 object-cover rounded-xl border border-slate-200" alt={`Report ${i + 1}`} />
-                          <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
-                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <PatientNotesSection
+                ref={notesSectionRef}
+                form={form}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                onReportsEnter={handleReportsEnter}
+              />
 
               {/* Action Buttons */}
               <div className="flex flex-wrap justify-end gap-3 pt-2">
                 {lastSaved && (
                   <button type="button" onClick={() => printPatientPrescription(lastSaved)}
-                    className="px-5 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2">
+                    className="px-5 py-3 rounded-xl font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm transition-colors flex items-center gap-2">
                     <Printer className="w-5 h-5" /> Print Last
                   </button>
                 )}
                 <button type="submit"
-                  ref={submitBtnRef}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); form.handleSubmit(onSubmit)(); } }}
-                  className="px-7 py-3 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-2"
-                  style={{background: `rgb(var(--primary))`}}>
+                  className="px-7 py-3 rounded-xl font-semibold text-white shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-transform flex items-center gap-2"
+                  style={{ background: `rgb(var(--primary))` }}>
                   <Save className="w-5 h-5" /> Save Patient
                 </button>
                 {lastSaved && (
                   <button type="button"
-                    onClick={() => setWaPatient({name: lastSaved.name, mobile: lastSaved.mobile, advice: lastSaved.advice || ""})}
-                    className="px-5 py-3 rounded-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg transition-all flex items-center gap-2">
+                    onClick={() => setWaPatient({ name: lastSaved.name, mobile: lastSaved.mobile, advice: lastSaved.advice || "" })}
+                    className="px-5 py-3 rounded-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg transition-colors flex items-center gap-2">
                     <MessageCircle className="w-5 h-5" /> WhatsApp
                   </button>
                 )}
@@ -1739,261 +361,19 @@ export default function Home() {
         {/* ── SIDEBAR ── */}
         <div className="lg:col-span-4">
           <div className="sticky top-24 space-y-4 overflow-y-auto max-h-[calc(100vh-7rem)] pr-0.5">
-            {/* Filter Mode Selector */}
-            <div className="medical-card p-3">
-              <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
-                <button onClick={() => setFilterMode("history")}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${filterMode === "history" ? "bg-white shadow text-primary" : "text-slate-500 hover:text-slate-700"}`}>
-                  <RefreshCw className="w-3 h-3" /> History
-                </button>
-                <button onClick={() => setFilterMode("complaint")}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${filterMode === "complaint" ? "bg-white shadow text-primary" : "text-slate-500 hover:text-slate-700"}`}>
-                  <Activity className="w-3 h-3" /> Complaint
-                </button>
-                <button onClick={() => setFilterMode("address")}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1 ${filterMode === "address" ? "bg-white shadow text-primary" : "text-slate-500 hover:text-slate-700"}`}>
-                  <MapPin className="w-3 h-3" /> Village
-                </button>
-              </div>
-
-              {(filterMode === "complaint" || filterMode === "address") && (
-                <div className="mt-2 relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={filterQuery}
-                    onChange={e => setFilterQuery(e.target.value)}
-                    placeholder={filterMode === "complaint" ? "Search complaint or code..." : "Search village / city..."}
-                    className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-primary text-sm"
-                    autoFocus
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Results Panel */}
-            <AnimatePresence mode="wait">
-              {/* ── HISTORY MODE ── */}
-              {filterMode === "history" && (
-                <motion.div key="history" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                  className="medical-card overflow-hidden flex flex-col max-h-[calc(100vh-220px)]">
-                  {patientHistory.length > 0 ? (
-                    <>
-                      {/* Patient identity header */}
-                      <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 shrink-0">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                            <User className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-900 truncate">{historyName || patientHistory[0]?.name}</p>
-                            <p className="text-xs font-mono text-slate-500">{historyMobile || patientHistory[0]?.mobile}</p>
-                          </div>
-                          <span className="ml-auto text-xs text-slate-400 shrink-0">{patientHistory.length} visits</span>
-                        </div>
-                      </div>
-                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        {patientHistory.map((visit) => (
-                          <VisitCard
-                            key={visit.id}
-                            visit={visit}
-                            bill={historyBillMap[`${visit.id}_${visit.visitDate}`]}
-                            onSelect={prefillFromPatient}
-                            onPrint={printPatientPrescription}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="p-8 flex flex-col items-center justify-center text-center text-slate-400 h-64">
-                      <FileText className="w-12 h-12 mb-4 text-slate-300" />
-                      <p className="font-medium">No history yet</p>
-                      <p className="text-sm mt-2">Type mobile / case no. then press<br /><kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-xs mx-1">Enter</kbd>or click <Search className="w-3 h-3 inline mx-1" /></p>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-
-              {/* ── COMPLAINT / VILLAGE MODE ── compact list ── */}
-              {(filterMode === "complaint" || filterMode === "address") && (
-                <motion.div key="filter" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                  className="medical-card overflow-hidden flex flex-col max-h-[calc(100vh-220px)]">
-                  {filterResults.length > 0 ? (
-                    <>
-                      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/60 shrink-0 flex items-center gap-2">
-                        <SlidersHorizontal className="w-4 h-4 text-primary" />
-                        <span className="font-semibold text-sm text-slate-800">
-                          {filterMode === "complaint" ? "By Complaint" : "By Village"}
-                        </span>
-                        <span className="ml-auto text-xs font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
-                          {filterResults.length} patients
-                        </span>
-                      </div>
-                      <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-                        {filterResults.map((p, i) => (
-                          <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors">
-                            <span className="text-xs text-slate-400 font-medium w-5 shrink-0">{i + 1}</span>
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold text-slate-900 text-sm truncate">{p.name}</p>
-                              <p className="text-xs font-mono text-slate-400">{p.mobile}</p>
-                            </div>
-                            <span className="text-xs text-slate-400 shrink-0">
-                              {format(new Date(p.visitDate), "dd/MM/yy")}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="p-8 flex flex-col items-center justify-center text-center text-slate-400 h-48">
-                      {filterMode === "complaint" ? <Activity className="w-10 h-10 mb-3 text-slate-300" /> : <MapPin className="w-10 h-10 mb-3 text-slate-300" />}
-                      <p className="text-sm font-medium">{filterQuery.length < 2 ? "Type to search..." : "No results found"}</p>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* ── PENDING FEES PANEL ── */}
-            <div className="medical-card overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border-b border-amber-100">
-                <div className="flex items-center gap-2">
-                  <WalletCards className="w-4 h-4 text-amber-500" />
-                  <span className="font-semibold text-sm text-slate-800">Pending Fees</span>
-                  {pendingFees.length > 0 && (
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white">{pendingFees.length}</span>
-                  )}
-                </div>
-                {pendingFees.length > 0 && (
-                  <span className="text-xs font-bold text-amber-700">
-                    Total: ₹{pendingFees.reduce((s, e) => s + e.amount, 0)}
-                  </span>
-                )}
-              </div>
-              {pendingFees.length === 0 ? (
-                <div className="px-4 py-6 text-center text-slate-400">
-                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-300" />
-                  <p className="text-xs font-medium">No pending fees</p>
-                  <p className="text-xs mt-1 text-slate-300">Use "Mark Pending" when saving a patient</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-amber-50 max-h-64 overflow-y-auto">
-                  {pendingFees.map((e, i) => (
-                    <div key={e.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-amber-50/50 transition-colors">
-                      <span className="text-xs text-slate-400 w-4 shrink-0">{i + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-xs text-slate-900 truncate">{e.patientName}</p>
-                        <p className="text-[10px] font-mono text-slate-400">{e.patientMobile} · {format(new Date(e.date + "T00:00:00"), "dd MMM")}</p>
-                      </div>
-                      <span className="font-bold text-amber-600 text-sm shrink-0">₹{e.amount}</span>
-                      <button
-                        onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Collected", description: `₹${e.amount} from ${e.patientName} marked as collected.` }); }}
-                        title="Mark as collected"
-                        className="shrink-0 p-1.5 rounded-lg bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition-colors">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  <div className="px-3 py-2 bg-amber-50 flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-600">Total Pending</span>
-                    <span className="font-bold text-amber-600">₹{pendingFees.reduce((s, e) => s + e.amount, 0)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
+            <PatientHistoryPanel
+              patientHistory={patientHistory}
+              historyName={historyName}
+              historyMobile={historyMobile}
+              historyBillMap={historyBillMap}
+              pendingFees={pendingFees}
+              refreshPending={refreshPending}
+              onSelectVisit={prefillFromPatient}
+              onPrintVisit={printPatientPrescription}
+            />
           </div>
         </div>
       </div>
-      {/* ── Google Sheet Connect Modal ── */}
-      <AnimatePresence>
-        {showSheetModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
-                  <Sheet className="w-5 h-5 text-emerald-600" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">Connect Google Sheet</h3>
-                <button onClick={() => setShowSheetModal(false)} className="ml-auto text-slate-400 hover:text-slate-600">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Instructions */}
-              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 mb-4 text-sm text-slate-700 space-y-1.5">
-                <p className="font-semibold text-emerald-800 mb-2">One-time setup in Google Sheets:</p>
-                <p>1. Open your Google Sheet</p>
-                <p>2. Click <strong>File → Share → Publish to web</strong></p>
-                <p>3. Choose <strong>Sheet1</strong> and <strong>Comma-separated values (.csv)</strong></p>
-                <p>4. Click <strong>Publish</strong> → confirm with OK</p>
-                <p>5. Copy the URL shown, or just copy the Sheet ID from the browser address bar</p>
-                <p>6. Paste it below and click Save</p>
-                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
-                  ⚠️ Use <strong>Publish to web</strong> (not the Share button) — this ensures the app can always read the data.
-                </div>
-                <p className="mt-2 text-xs text-slate-500">Sheet columns: <strong>Name | Mobile | Age | Weight | Address</strong></p>
-              </div>
-
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Google Sheet URL or ID</label>
-              <input
-                value={sheetInput}
-                onChange={e => setSheetInput(e.target.value)}
-                placeholder="Paste URL or Sheet ID here..."
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 text-sm font-mono"
-              />
-
-              <div className="flex gap-3 mt-5">
-                <button onClick={() => setShowSheetModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-all">
-                  Cancel
-                </button>
-                <button onClick={handleSaveSheet}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-all">
-                  Save & Connect
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Sheet Patient Picker Modal ── */}
-      <AnimatePresence>
-        {showSheetPicker && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]">
-              <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
-                <RefreshCw className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-bold text-slate-900">Select Patient from Sheet</h3>
-                <span className="ml-auto text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{sheetRows.length} patients</span>
-                <button onClick={() => setShowSheetPicker(false)} className="text-slate-400 hover:text-slate-600 ml-2">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
-                {sheetRows.map((row, i) => (
-                  <button key={i} onClick={() => handlePickRow(row)}
-                    className="w-full flex items-center gap-3 px-5 py-3 hover:bg-emerald-50 transition-colors text-left">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shrink-0 text-xs font-bold">
-                      {i + 1}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-slate-900 truncate">{row.name}</p>
-                      <p className="text-xs text-slate-400 font-mono">{row.mobile}{row.age ? ` · ${row.age} yrs` : ""}{row.address ? ` · ${row.address}` : ""}</p>
-                    </div>
-                    <span className="text-xs text-emerald-600 font-semibold shrink-0">Fill →</span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
 
       {/* ── WHATSAPP MODAL ── */}
       {waPatient && (
@@ -2001,62 +381,16 @@ export default function Home() {
           patientName={waPatient.name}
           mobile={waPatient.mobile}
           advice={waPatient.advice}
-          onClose={() => setWaPatient(null)}
+          onClose={handleCloseWaModal}
         />
       )}
-
-      {/* ── PENDING FEES ALERT POPUP ── */}
-      <AnimatePresence>
-        {pendingAlert && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-            <motion.div
-              initial={{ scale: 0.85, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.85, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 320, damping: 22 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
-              <div className="px-6 py-5 text-center" style={{ background: "linear-gradient(135deg,#fef3c7,#fde68a)" }}>
-                <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center mx-auto mb-3 shadow-lg">
-                  <WalletCards className="w-7 h-7 text-white" />
-                </div>
-                <h2 className="text-xl font-black text-amber-900">Pending Fees Alert!</h2>
-                <p className="text-sm text-amber-700 mt-1 font-medium">This patient has an outstanding balance</p>
-              </div>
-              <div className="px-6 py-5">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-50 border border-amber-200">
-                  <div>
-                    <p className="font-black text-slate-900 text-base">{pendingAlert.patientName}</p>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">{pendingAlert.patientMobile}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-black text-amber-600">&#8377;{pendingAlert.amount}</p>
-                    <p className="text-xs text-slate-400">since {new Date(pendingAlert.date + "T00:00:00").toLocaleDateString("en-IN", { day:"numeric", month:"short" })}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-3 px-6 pb-6">
-                <button onClick={() => setPendingAlert(null)}
-                  className="flex-1 py-3 rounded-2xl border-2 border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-all">
-                  Remind Later
-                </button>
-                <button
-                  onClick={() => { removePendingFee(pendingAlert.id); refreshPending(); setPendingAlert(null); toast({ title: "✓ Fees Collected", description: `₹${pendingAlert.amount} from ${pendingAlert.patientName} marked as collected.` }); }}
-                  className="flex-[2] py-3 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2 shadow-lg"
-                  style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
-                  <CheckCircle2 className="w-4 h-4" /> Mark as Paid
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── PENDING FEES FULL MODAL ── */}
       <AnimatePresence>
         {showPendingModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            onClick={() => setShowPendingModal(false)}>
+            onClick={handleClosePendingModal}>
             <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
               className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
               onClick={e => e.stopPropagation()}>
@@ -2065,7 +399,7 @@ export default function Home() {
                 <h3 className="font-black text-slate-900 text-base">Pending Fees</h3>
                 {pendingFees.length > 0 && <span className="text-xs font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">{pendingFees.length}</span>}
                 <span className="ml-auto font-bold text-amber-700 text-sm">Total: &#8377;{pendingFees.reduce((s,e) => s+e.amount, 0)}</span>
-                <button onClick={() => setShowPendingModal(false)} className="text-slate-400 hover:text-slate-600 ml-2"><X className="w-5 h-5" /></button>
+                <button onClick={handleClosePendingModal} className="text-slate-400 hover:text-slate-600 ml-2"><X className="w-5 h-5" /></button>
               </div>
               {pendingFees.length === 0 ? (
                 <div className="px-6 py-12 text-center text-slate-400">
@@ -2101,14 +435,14 @@ export default function Home() {
 
       {/* ── FLOATING PENDING FEES BUTTON ── */}
       {pendingFees.length > 0 && (
-        <motion.button initial={{ scale: 0 }} animate={{ scale: 1 }} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          onClick={() => { refreshPending(); setShowPendingModal(true); }}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl font-bold text-white text-sm"
+        <button
+          onClick={handleOpenPendingModal}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl font-bold text-white text-sm hover:scale-105 active:scale-95 transition-transform"
           style={{ background: "linear-gradient(135deg,#f59e0b,#ea580c)" }}>
           <WalletCards className="w-4 h-4" />
           <span>Pending Fees</span>
           <span className="bg-white text-amber-600 text-xs font-black rounded-full w-5 h-5 flex items-center justify-center">{pendingFees.length}</span>
-        </motion.button>
+        </button>
       )}
 
     </Layout>

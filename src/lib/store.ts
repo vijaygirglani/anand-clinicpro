@@ -225,10 +225,6 @@ export function getPatientsByDate(date: string): Patient[] {
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-export function getAyurvedicPatientsByDate(date: string): Patient[] {
-  return getPatients().filter((p) => p.visitDate === date && p.registerType === "ayurvedic")
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-}
 
 export function lookupByMobile(mobile: string): { latestInfo?: Patient; history: Patient[] } {
   const q = (mobile || "").trim();
@@ -297,37 +293,6 @@ export function searchPatientSuggestions(query: string): PatientSuggestion[] {
   return suggestions.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit)).slice(0, 8);
 }
 
-export interface FollowUpReminder {
-  patient: Patient;
-  followUpDate: string;
-  daysOverdue: number;
-}
-
-export function getFollowUpReminders(): FollowUpReminder[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const ayurvedicPatients = getPatients().filter(p => p.registerType === "ayurvedic");
-  const seen = new Set<string>();
-  const reminders: FollowUpReminder[] = [];
-  for (const p of ayurvedicPatients) {
-    const match = (p.advice || "").match(/f\s*(\d+)/i);
-    if (!match) continue;
-    const days = parseInt(match[1]);
-    if (!days || days <= 0) continue;
-    const visitDate = new Date(p.visitDate + "T00:00:00");
-    const followUp = new Date(visitDate);
-    followUp.setDate(followUp.getDate() + days);
-    const followUpStr = followUp.toISOString().slice(0, 10);
-    const diffMs = today.getTime() - followUp.getTime();
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays < -3) continue;
-    const key = `${p.mobile}_${p.visitDate}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    reminders.push({ patient: p, followUpDate: followUpStr, daysOverdue: diffDays });
-  }
-  return reminders.sort((a, b) => a.followUpDate.localeCompare(b.followUpDate));
-}
 
 export interface DailyStats {
   date: string;
@@ -341,10 +306,6 @@ export function getDailyStats(date: string): DailyStats {
   return { date, totalPatients: patients.length, totalFees: patients.reduce((s, p) => s + (p.fees || 0), 0), patients };
 }
 
-export function getAyurvedicDailyStats(date: string): DailyStats {
-  const patients = getAyurvedicPatientsByDate(date);
-  return { date, totalPatients: patients.length, totalFees: patients.reduce((s, p) => s + (p.fees || 0), 0), patients };
-}
 
 export function getAllDates(): { date: string; count: number; totalFees: number }[] {
   const patients = getPatients();
@@ -357,35 +318,19 @@ export function getAllDates(): { date: string; count: number; totalFees: number 
   return Object.entries(map).map(([date, v]) => ({ date, ...v })).sort((a, b) => b.date.localeCompare(a.date));
 }
 
-export function getAllAyurvedicDates(): { date: string; count: number; totalFees: number }[] {
-  const patients = getPatients().filter((p) => p.registerType === "ayurvedic");
-  const map: Record<string, { count: number; totalFees: number }> = {};
-  for (const p of patients) {
-    if (!map[p.visitDate]) map[p.visitDate] = { count: 0, totalFees: 0 };
-    map[p.visitDate].count += 1;
-    map[p.visitDate].totalFees += p.fees || 0;
-  }
-  return Object.entries(map).map(([date, v]) => ({ date, ...v })).sort((a, b) => b.date.localeCompare(a.date));
-}
 
 export function getMonthlyStats(year: number, month: number) {
   const monthStr = `${year}-${String(month).padStart(2, "0")}`;
   const patients = getPatients().filter((p) => p.visitDate.startsWith(monthStr));
   const totalFees = patients.reduce((sum, p) => sum + (p.fees || 0), 0);
-  const generalPatients = patients.filter(p => p.registerType !== "ayurvedic").length;
-  const ayurvedicPatients = patients.filter(p => p.registerType === "ayurvedic").length;
-  const generalFees = patients.filter(p => p.registerType !== "ayurvedic").reduce((s, p) => s + (p.fees || 0), 0);
-  const ayurvedicFees = patients.filter(p => p.registerType === "ayurvedic").reduce((s, p) => s + (p.fees || 0), 0);
-  const dayMap: Record<string, { count: number; totalFees: number; generalFees: number; ayurvedicFees: number }> = {};
+  const dayMap: Record<string, { count: number; totalFees: number }> = {};
   for (const p of patients) {
-    if (!dayMap[p.visitDate]) dayMap[p.visitDate] = { count: 0, totalFees: 0, generalFees: 0, ayurvedicFees: 0 };
+    if (!dayMap[p.visitDate]) dayMap[p.visitDate] = { count: 0, totalFees: 0 };
     dayMap[p.visitDate].count += 1;
     dayMap[p.visitDate].totalFees += p.fees || 0;
-    if (p.registerType === "ayurvedic") dayMap[p.visitDate].ayurvedicFees += p.fees || 0;
-    else dayMap[p.visitDate].generalFees += p.fees || 0;
   }
   const dailyBreakdown = Object.entries(dayMap).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date));
-  return { totalPatients: patients.length, totalFees, generalPatients, ayurvedicPatients, generalFees, ayurvedicFees, dailyBreakdown };
+  return { totalPatients: patients.length, totalFees, dailyBreakdown };
 }
 
 // ═══════════════════════════════════════════════════════════════
