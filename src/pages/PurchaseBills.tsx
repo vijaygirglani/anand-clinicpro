@@ -66,8 +66,19 @@ export default function PurchaseBills() {
   const [activeMedRow, setActiveMedRow] = useState<number | null>(null);
   const [highlightedMedIdx, setHighlightedMedIdx] = useState<number | null>(null);
   const medContainerRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const medInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [medDropPos, setMedDropPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const activeMedRowRef = useRef<number | null>(null);
   activeMedRowRef.current = activeMedRow;
+
+  // Recompute fixed dropdown position when active row changes
+  useEffect(() => {
+    if (activeMedRow === null) { setMedDropPos(null); return; }
+    const input = medInputRefs.current[activeMedRow];
+    if (!input) return;
+    const rect = input.getBoundingClientRect();
+    setMedDropPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+  }, [activeMedRow]);
 
   // Outside-click handler (single persistent listener)
   useEffect(() => {
@@ -100,21 +111,14 @@ export default function PurchaseBills() {
   }, [supplier, supplierNames, showSupplierDrop]);
 
   // Medicine names + stock lookup from getAllBatchStocks
-  const { medNames, medStockMap } = useMemo(() => {
+  const medNames = useMemo(() => {
     const stocks = getAllBatchStocks();
-    const displayMap = new Map<string, string>(); // lowercase → display name
-    const stockMap = new Map<string, { packSize: number; mrpPerPack: number }>();
+    const seen = new Map<string, string>(); // lowercase → display name
     for (const s of stocks) {
       const key = s.medicineName.toLowerCase();
-      if (!displayMap.has(key)) {
-        displayMap.set(key, s.medicineName);
-        stockMap.set(key, { packSize: s.packSize, mrpPerPack: s.mrpPerPack });
-      }
+      if (!seen.has(key)) seen.set(key, s.medicineName);
     }
-    return {
-      medNames: Array.from(displayMap.values()).sort(),
-      medStockMap: stockMap,
-    };
+    return Array.from(seen.values()).sort();
   }, [bills]); // refresh when bills change (new stock added)
 
   const medSuggestions = useMemo(() => {
@@ -123,8 +127,8 @@ export default function PurchaseBills() {
     if (!q) return [];
     return medNames.filter(n => {
       const lower = n.toLowerCase();
-      return lower.startsWith(q) || lower.split(/\s+/).some(w => w.startsWith(q));
-    }).slice(0, 12);
+      return lower.startsWith(q) || lower.includes(q) || lower.split(/\s+/).some(w => w.startsWith(q));
+    }).slice(0, 8);
   }, [activeMedRow, rows, medNames]);
 
   const refresh = () => setBills(getPurchaseBills().sort((a, b) => b.billDate.localeCompare(a.billDate)));
@@ -368,6 +372,7 @@ export default function PurchaseBills() {
                         <td className="px-2 py-1 min-w-[160px]">
                           <div ref={el => { medContainerRefs.current[i] = el; }} className="relative">
                             <input value={r.medicineName}
+                              ref={el => { medInputRefs.current[i] = el; }}
                               onChange={e => {
                                 setRows(p => p.map((x,idx) => idx===i ? {...x, medicineName: e.target.value} : x));
                                 setActiveMedRow(i);
@@ -385,31 +390,22 @@ export default function PurchaseBills() {
                                 else if (e.key === "Enter" && highlightedMedIdx !== null && medSuggestions[highlightedMedIdx]) {
                                   e.preventDefault();
                                   const name = medSuggestions[highlightedMedIdx];
-                                  const stock = medStockMap.get(name.toLowerCase());
-                                  setRows(p => p.map((x,idx) => idx===i ? {
-                                    ...x, medicineName: name,
-                                    reorderLevel: getSavedReorderLevel(name),
-                                    ...(stock ? { packSize: stock.packSize, mrpPerPack: stock.mrpPerPack } : {}),
-                                  } : x));
+                                  setRows(p => p.map((x,idx) => idx===i ? { ...x, medicineName: name } : x));
                                   setActiveMedRow(null);
                                   setHighlightedMedIdx(null);
                                 } else if (e.key === "Escape") { setActiveMedRow(null); setHighlightedMedIdx(null); }
                               }}
                               placeholder="Medicine name" className={inputCls} autoComplete="off"
                             />
-                            {activeMedRow === i && medSuggestions.length > 0 && (
-                              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl overflow-y-auto" style={{ zIndex: 9999, maxHeight: "200px" }}>
+                            {activeMedRow === i && medSuggestions.length > 0 && medDropPos && (
+                              <div className="bg-white border border-slate-200 rounded-lg shadow-xl overflow-y-auto"
+                                style={{ position: "fixed", top: medDropPos.top, left: medDropPos.left, width: medDropPos.width, zIndex: 9999, maxHeight: "200px" }}>
                                 {medSuggestions.map((name, j) => (
                                   <button key={j} type="button"
                                     ref={el => { if (el && j === highlightedMedIdx) el.scrollIntoView({ block: "nearest" }); }}
                                     onMouseDown={e => {
                                       e.preventDefault();
-                                      const stock = medStockMap.get(name.toLowerCase());
-                                      setRows(p => p.map((x,idx) => idx===i ? {
-                                        ...x, medicineName: name,
-                                        reorderLevel: getSavedReorderLevel(name),
-                                        ...(stock ? { packSize: stock.packSize, mrpPerPack: stock.mrpPerPack } : {}),
-                                      } : x));
+                                      setRows(p => p.map((x,idx) => idx===i ? { ...x, medicineName: name } : x));
                                       setActiveMedRow(null);
                                       setHighlightedMedIdx(null);
                                     }}
