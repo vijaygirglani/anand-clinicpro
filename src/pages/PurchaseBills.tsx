@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import {
   getPurchaseBills, savePurchaseBill, deletePurchaseBill, clearPurchaseBills, addPaymentToBill,
-  getSupplierSummary, calcLandingCost, newId, formatExpiry,
+  getSupplierSummary, calcLandingCost, newId, formatExpiry, getAllBatchStocks,
   type PurchaseBill, type PurchaseBillItem,
 } from "@/lib/inventory";
 import { useToast } from "@/hooks/use-toast";
@@ -56,6 +56,76 @@ export default function PurchaseBills() {
   const [billNo, setBillNo] = useState("");
   const [billDate, setBillDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [rows, setRows] = useState<RowDraft[]>([emptyRow()]);
+
+  // Supplier autocomplete
+  const [showSupplierDrop, setShowSupplierDrop] = useState(false);
+  const [highlightedSupplierIdx, setHighlightedSupplierIdx] = useState<number | null>(null);
+  const supplierContainerRef = useRef<HTMLDivElement>(null);
+
+  // Medicine autocomplete
+  const [activeMedRow, setActiveMedRow] = useState<number | null>(null);
+  const [highlightedMedIdx, setHighlightedMedIdx] = useState<number | null>(null);
+  const medContainerRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const activeMedRowRef = useRef<number | null>(null);
+  activeMedRowRef.current = activeMedRow;
+
+  // Outside-click handler (single persistent listener)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (supplierContainerRef.current && !supplierContainerRef.current.contains(e.target as Node)) {
+        setShowSupplierDrop(false);
+      }
+      const idx = activeMedRowRef.current;
+      if (idx !== null) {
+        const ref = medContainerRefs.current[idx];
+        if (ref && !ref.contains(e.target as Node)) {
+          setActiveMedRow(null);
+        }
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Unique supplier names from saved bills
+  const supplierNames = useMemo(() => {
+    const names = new Set(bills.map(b => b.supplierName));
+    return Array.from(names).sort();
+  }, [bills]);
+
+  const supplierSuggestions = useMemo(() => {
+    if (!supplier.trim() || !showSupplierDrop) return [];
+    const q = supplier.trim().toLowerCase();
+    return supplierNames.filter(n => n.toLowerCase().includes(q)).slice(0, 10);
+  }, [supplier, supplierNames, showSupplierDrop]);
+
+  // Medicine names + stock lookup from getAllBatchStocks
+  const { medNames, medStockMap } = useMemo(() => {
+    const stocks = getAllBatchStocks();
+    const displayMap = new Map<string, string>(); // lowercase → display name
+    const stockMap = new Map<string, { packSize: number; mrpPerPack: number }>();
+    for (const s of stocks) {
+      const key = s.medicineName.toLowerCase();
+      if (!displayMap.has(key)) {
+        displayMap.set(key, s.medicineName);
+        stockMap.set(key, { packSize: s.packSize, mrpPerPack: s.mrpPerPack });
+      }
+    }
+    return {
+      medNames: Array.from(displayMap.values()).sort(),
+      medStockMap: stockMap,
+    };
+  }, [bills]); // refresh when bills change (new stock added)
+
+  const medSuggestions = useMemo(() => {
+    if (activeMedRow === null) return [];
+    const q = (rows[activeMedRow]?.medicineName ?? "").trim().toLowerCase();
+    if (!q) return [];
+    return medNames.filter(n => {
+      const lower = n.toLowerCase();
+      return lower.startsWith(q) || lower.split(/\s+/).some(w => w.startsWith(q));
+    }).slice(0, 12);
+  }, [activeMedRow, rows, medNames]);
 
   const refresh = () => setBills(getPurchaseBills().sort((a, b) => b.billDate.localeCompare(a.billDate)));
 
@@ -238,10 +308,35 @@ export default function PurchaseBills() {
         {showForm && (
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50 grid grid-cols-3 gap-4">
-              <div>
+              <div ref={supplierContainerRef} className="relative">
                 <label className="text-xs font-semibold text-slate-600">Supplier *</label>
-                <input value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Jeenam Pharma"
-                  className="mt-1 w-full border-2 border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[rgb(var(--primary))]" />
+                <input
+                  value={supplier}
+                  onChange={e => { setSupplier(e.target.value); setShowSupplierDrop(true); setHighlightedSupplierIdx(null); }}
+                  onFocus={() => setShowSupplierDrop(true)}
+                  onKeyDown={e => {
+                    if (e.key === "ArrowDown") { e.preventDefault(); setHighlightedSupplierIdx(p => p === null ? 0 : Math.min(p + 1, supplierSuggestions.length - 1)); }
+                    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlightedSupplierIdx(p => p === null ? supplierSuggestions.length - 1 : Math.max(p - 1, 0)); }
+                    else if (e.key === "Enter" && highlightedSupplierIdx !== null && supplierSuggestions[highlightedSupplierIdx]) {
+                      e.preventDefault(); setSupplier(supplierSuggestions[highlightedSupplierIdx]); setShowSupplierDrop(false); setHighlightedSupplierIdx(null);
+                    } else if (e.key === "Escape") { setShowSupplierDrop(false); setHighlightedSupplierIdx(null); }
+                  }}
+                  placeholder="Jeenam Pharma"
+                  className="mt-1 w-full border-2 border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[rgb(var(--primary))]"
+                  autoComplete="off"
+                />
+                {showSupplierDrop && supplierSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl overflow-y-auto" style={{ zIndex: 9999, maxHeight: "200px" }}>
+                    {supplierSuggestions.map((name, i) => (
+                      <button key={i} type="button"
+                        ref={el => { if (el && i === highlightedSupplierIdx) el.scrollIntoView({ block: "nearest" }); }}
+                        onMouseDown={e => { e.preventDefault(); setSupplier(name); setShowSupplierDrop(false); setHighlightedSupplierIdx(null); }}
+                        className={`w-full px-3 py-2 text-left text-sm border-b border-slate-50 last:border-0 hover:bg-blue-50 ${i === highlightedSupplierIdx ? "bg-blue-100" : ""}`}>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-600">Bill No *</label>
@@ -270,13 +365,62 @@ export default function PurchaseBills() {
                     return (
                       <tr key={i} className={`border-b border-slate-100 ${i%2===0?"bg-white":"bg-slate-50/30"}`}>
                         <td className="px-2 py-1 text-slate-400 text-xs">{i+1}</td>
-                        <td className="px-2 py-1 min-w-[160px]"><input value={r.medicineName} 
-  onChange={e => setRows(p=>p.map((x,idx)=>idx===i?{...x,medicineName:e.target.value}:x))}
-  onBlur={e => {
-    const saved = getSavedReorderLevel(e.target.value);
-    setRows(p=>p.map((x,idx)=>idx===i?{...x,reorderLevel:saved}:x));
-  }}
-  placeholder="Medicine name" className={inputCls} autoComplete="off" /></td>
+                        <td className="px-2 py-1 min-w-[160px]">
+                          <div ref={el => { medContainerRefs.current[i] = el; }} className="relative">
+                            <input value={r.medicineName}
+                              onChange={e => {
+                                setRows(p => p.map((x,idx) => idx===i ? {...x, medicineName: e.target.value} : x));
+                                setActiveMedRow(i);
+                                setHighlightedMedIdx(null);
+                              }}
+                              onFocus={() => { setActiveMedRow(i); setHighlightedMedIdx(null); }}
+                              onBlur={e => {
+                                const saved = getSavedReorderLevel(e.target.value);
+                                setRows(p => p.map((x,idx) => idx===i ? {...x, reorderLevel: saved} : x));
+                              }}
+                              onKeyDown={e => {
+                                if (activeMedRow !== i) return;
+                                if (e.key === "ArrowDown") { e.preventDefault(); setHighlightedMedIdx(p => p === null ? 0 : Math.min(p + 1, medSuggestions.length - 1)); }
+                                else if (e.key === "ArrowUp") { e.preventDefault(); setHighlightedMedIdx(p => p === null ? medSuggestions.length - 1 : Math.max(p - 1, 0)); }
+                                else if (e.key === "Enter" && highlightedMedIdx !== null && medSuggestions[highlightedMedIdx]) {
+                                  e.preventDefault();
+                                  const name = medSuggestions[highlightedMedIdx];
+                                  const stock = medStockMap.get(name.toLowerCase());
+                                  setRows(p => p.map((x,idx) => idx===i ? {
+                                    ...x, medicineName: name,
+                                    reorderLevel: getSavedReorderLevel(name),
+                                    ...(stock ? { packSize: stock.packSize, mrpPerPack: stock.mrpPerPack } : {}),
+                                  } : x));
+                                  setActiveMedRow(null);
+                                  setHighlightedMedIdx(null);
+                                } else if (e.key === "Escape") { setActiveMedRow(null); setHighlightedMedIdx(null); }
+                              }}
+                              placeholder="Medicine name" className={inputCls} autoComplete="off"
+                            />
+                            {activeMedRow === i && medSuggestions.length > 0 && (
+                              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl overflow-y-auto" style={{ zIndex: 9999, maxHeight: "200px" }}>
+                                {medSuggestions.map((name, j) => (
+                                  <button key={j} type="button"
+                                    ref={el => { if (el && j === highlightedMedIdx) el.scrollIntoView({ block: "nearest" }); }}
+                                    onMouseDown={e => {
+                                      e.preventDefault();
+                                      const stock = medStockMap.get(name.toLowerCase());
+                                      setRows(p => p.map((x,idx) => idx===i ? {
+                                        ...x, medicineName: name,
+                                        reorderLevel: getSavedReorderLevel(name),
+                                        ...(stock ? { packSize: stock.packSize, mrpPerPack: stock.mrpPerPack } : {}),
+                                      } : x));
+                                      setActiveMedRow(null);
+                                      setHighlightedMedIdx(null);
+                                    }}
+                                    className={`w-full px-3 py-2 text-left text-xs border-b border-slate-50 last:border-0 hover:bg-blue-50 ${j === highlightedMedIdx ? "bg-blue-100" : ""}`}>
+                                    {name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-2 py-1 w-20"><input value={r.batchNo} onChange={e=>setRows(p=>p.map((x,idx)=>idx===i?{...x,batchNo:e.target.value}:x))} placeholder="Batch" className={inputCls}/></td>
                         <td className="px-2 py-1 w-20"><input value={r.expiryDate}
   onChange={e => {

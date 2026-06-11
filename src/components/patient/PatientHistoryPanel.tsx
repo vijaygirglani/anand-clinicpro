@@ -5,7 +5,7 @@ import {
 } from "@/lib/store";
 import {
   User, FileText, Search, Activity, MapPin, RefreshCw,
-  SlidersHorizontal, WalletCards, CheckCircle2, Printer,
+  SlidersHorizontal, WalletCards, CheckCircle2, Printer, X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -253,14 +253,14 @@ export const PatientHistoryPanel = React.memo(function PatientHistoryPanel({
                 <span className="text-xs text-slate-400 w-4 shrink-0">{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-xs text-slate-900 truncate">{e.patientName}</p>
-                  <p className="text-[10px] font-mono text-slate-400">{e.patientMobile} · {format(new Date(e.date + "T00:00:00"), "dd MMM")}</p>
+                  <p className="text-[10px] font-mono text-slate-400">{format(new Date(e.date + "T00:00:00"), "dd MMM yyyy")}</p>
                 </div>
                 <span className="font-bold text-amber-600 text-sm shrink-0">₹{e.amount}</span>
                 <button
-                  onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Collected", description: `₹${e.amount} from ${e.patientName} marked as collected.` }); }}
-                  title="Mark as collected"
-                  className="shrink-0 p-1.5 rounded-lg bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition-colors">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Deleted", description: `₹${e.amount} entry for ${e.patientName} removed.` }); }}
+                  title="Delete entry"
+                  className="shrink-0 p-1.5 rounded-lg bg-red-100 text-red-500 hover:bg-red-200 transition-colors">
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             ))}

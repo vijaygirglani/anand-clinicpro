@@ -11,7 +11,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { getPendingFees, removePendingFee, type PendingEntry } from "@/lib/pendingFees";
+import { getPendingFees, type PendingEntry } from "@/lib/pendingFees";
 import { type PatientFormValues, todayStr } from "./types";
 
 // ── Google Sheet helpers ──────────────────────────────────────────────
@@ -581,49 +581,63 @@ export const PatientInfoForm = React.memo(function PatientInfoForm({
 
       {/* ── PENDING FEES ALERT POPUP ── */}
       <AnimatePresence>
-        {pendingAlert && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-            <motion.div
-              initial={{ scale: 0.85, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.85, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 320, damping: 22 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
-              <div className="px-6 py-5 text-center" style={{ background: "linear-gradient(135deg,#fef3c7,#fde68a)" }}>
-                <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center mx-auto mb-3 shadow-lg">
-                  <WalletCards className="w-7 h-7 text-white" />
-                </div>
-                <h2 className="text-xl font-black text-amber-900">Pending Fees Alert!</h2>
-                <p className="text-sm text-amber-700 mt-1 font-medium">This patient has an outstanding balance</p>
-              </div>
-              <div className="px-6 py-5">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-50 border border-amber-200">
-                  <div>
-                    <p className="font-black text-slate-900 text-base">{pendingAlert.patientName}</p>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">{pendingAlert.patientMobile}</p>
+        {pendingAlert && (() => {
+          const allEntries = getPendingFees().filter(e =>
+            e.patientMobile.replace(/\D/g, "") === pendingAlert.patientMobile.replace(/\D/g, "")
+          );
+          const totalOwed = allEntries.reduce((s, e) => s + e.amount, 0);
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+              <motion.div
+                initial={{ scale: 0.85, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.85, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 320, damping: 22 }}
+                className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
+                <div className="px-6 py-5 text-center" style={{ background: "linear-gradient(135deg,#fef3c7,#fde68a)" }}>
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center mx-auto mb-3 shadow-lg">
+                    <WalletCards className="w-7 h-7 text-white" />
                   </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-black text-amber-600">&#8377;{pendingAlert.amount}</p>
-                    <p className="text-xs text-slate-400">since {new Date(pendingAlert.date + "T00:00:00").toLocaleDateString("en-IN", { day:"numeric", month:"short" })}</p>
+                  <h2 className="text-xl font-black text-amber-900">Pending Fees Alert!</h2>
+                  <p className="text-sm text-amber-700 mt-1 font-medium">This patient has an outstanding balance</p>
+                </div>
+                <div className="px-6 pt-4 pb-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="font-black text-slate-900 text-base">{pendingAlert.patientName}</p>
+                      <p className="text-xs text-slate-500 font-mono mt-0.5">{pendingAlert.patientMobile}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-amber-600">&#8377;{totalOwed}</p>
+                      <p className="text-xs text-slate-400">{allEntries.length} entr{allEntries.length === 1 ? "y" : "ies"}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {allEntries.map(e => (
+                      <div key={e.id} className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-50 border border-amber-100">
+                        <p className="text-xs text-slate-500">{new Date(e.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+                        <p className="text-sm font-bold text-amber-700">&#8377;{e.amount}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-              <div className="flex gap-3 px-6 pb-6">
-                <button type="button" onClick={() => setPendingAlert(null)}
-                  className="flex-1 py-3 rounded-2xl border-2 border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-colors">
-                  Remind Later
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { removePendingFee(pendingAlert.id); refreshPending(); setPendingAlert(null); toast({ title: "✓ Fees Collected", description: `₹${pendingAlert.amount} from ${pendingAlert.patientName} marked as collected.` }); }}
-                  className="flex-[2] py-3 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2 shadow-lg"
-                  style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
-                  <CheckCircle2 className="w-4 h-4" /> Mark as Paid
-                </button>
-              </div>
+                <div className="flex gap-3 px-6 py-5">
+                  <button type="button" onClick={() => setPendingAlert(null)}
+                    className="flex-1 py-3 rounded-2xl border-2 border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                    Remind Later
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingAlert(null)}
+                    className="flex-[2] py-3 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2 shadow-lg"
+                    style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}>
+                    <CheckCircle2 className="w-4 h-4" /> OK, Got It
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
+          );
+        })()}
       </AnimatePresence>
     </>
   );

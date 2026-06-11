@@ -15,10 +15,9 @@ export function getPendingFees(): PendingEntry[] {
   try { return JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"); } catch { return []; }
 }
 
-/** One pending entry per mobile — replacing any prior entry for the same patient */
+/** Always append — never replace existing entries for the same patient */
 export function addPendingFee(e: PendingEntry) {
-  const rest = getPendingFees().filter(x => x.patientMobile.replace(/\D/g,"") !== e.patientMobile.replace(/\D/g,""));
-  localStorage.setItem(PENDING_KEY, JSON.stringify([...rest, e]));
+  localStorage.setItem(PENDING_KEY, JSON.stringify([...getPendingFees(), e]));
 }
 
 export function removePendingFee(id: string) {

@@ -416,9 +416,10 @@ export default function Home() {
                         <p className="text-[11px] font-mono text-slate-400">{e.patientMobile} &middot; {new Date(e.date+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
                       </div>
                       <span className="font-black text-amber-600 text-base shrink-0">&#8377;{e.amount}</span>
-                      <button onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Collected", description: `₹${e.amount} from ${e.patientName} cleared.` }); }}
-                        className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors text-xs font-bold">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Collected
+                      <button onClick={() => { removePendingFee(e.id); refreshPending(); toast({ title: "Deleted", description: `₹${e.amount} entry for ${e.patientName} removed.` }); }}
+                        title="Delete entry"
+                        className="shrink-0 p-1.5 rounded-xl bg-red-100 text-red-500 hover:bg-red-200 transition-colors">
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
                   ))}
