@@ -6,10 +6,20 @@ import { UseFormReturn } from "react-hook-form";
 import { Activity, CheckCircle2, Hourglass } from "lucide-react";
 import {
   searchMedicineNames, getAvailableBatchesForMedicine, formatExpiry,
+  getAllBatchStocks, type BatchStock,
 } from "@/lib/inventory";
 import { findComplaintCode } from "@/lib/store";
 import { type PatientFormValues } from "./types";
 import { type MedRow } from "./types";
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
 
 export interface MedicineBillingSectionRef {
   focusComplaintCode: () => void;
@@ -58,10 +68,21 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
     const otherChargesRef = useRef<HTMLInputElement | null>(null);
     const complaintCodeRef = useRef<HTMLInputElement | null>(null);
     const complaintRef = useRef<HTMLTextAreaElement | null>(null);
-    const medSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Keep a ref in sync for imperative reads (mirrors medRows)
     const medRowsRef = useRef<MedRow[]>(medRows);
     useEffect(() => { medRowsRef.current = medRows; }, [medRows]);
+
+    // Cache all available batches on mount — avoid repeated localStorage reads during search
+    const allBatchesCacheRef = useRef<BatchStock[]>([]);
+    useEffect(() => {
+      allBatchesCacheRef.current = getAllBatchStocks().filter(
+        b => !b.discontinued && b.tabletsAvailable > 0
+      );
+    }, []);
+
+    // Debounced search term — only searches after 200ms pause in typing
+    const [searchTerm, setSearchTerm] = useState('');
+    const debouncedSearch = useDebounce(searchTerm, 200);
 
     useImperativeHandle(ref, () => ({
       focusComplaintCode: () => complaintCodeRef.current?.focus(),
@@ -186,22 +207,36 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
     }, [closeOnScroll]);
 
     const getMedSuggestions = useCallback((query: string) => {
-      if (!query || query.length < 1) return [];
-      const results = searchMedicineNames(query);
+      if (!query || query.length < 2) return [];
+      const q = query.toLowerCase();
+      const cache = allBatchesCacheRef.current;
+
+      // Group matching batches by medicine name — search from in-memory cache only
+      const grouped = new Map<string, BatchStock[]>();
+      for (const b of cache) {
+        if (b.medicineName.toLowerCase().includes(q)) {
+          const key = b.medicineName.toLowerCase();
+          if (!grouped.has(key)) grouped.set(key, []);
+          grouped.get(key)!.push(b);
+        }
+      }
+
       const suggestions: {name: string; mrpPerTablet: number; currentStock: number; bestBatch: any; batchLabel: string}[] = [];
-      for (const r of results) {
-        if (r.batches.length === 1) {
+      for (const batches of grouped.values()) {
+        if (!batches.length) continue;
+        const name = batches[0].medicineName;
+        if (batches.length === 1) {
           suggestions.push({
-            name: r.name,
-            mrpPerTablet: r.bestBatch?.mrpPerTablet || 0,
-            currentStock: r.batches.reduce((s, b) => s + b.tabletsAvailable, 0),
-            bestBatch: r.bestBatch,
+            name,
+            mrpPerTablet: batches[0].mrpPerTablet,
+            currentStock: batches[0].tabletsAvailable,
+            bestBatch: batches[0],
             batchLabel: "",
           });
         } else {
-          for (const batch of r.batches) {
+          for (const batch of batches) {
             suggestions.push({
-              name: r.name,
+              name,
               mrpPerTablet: batch.mrpPerTablet,
               currentStock: batch.tabletsAvailable,
               bestBatch: batch,
@@ -211,7 +246,16 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
         }
       }
       return suggestions.slice(0, 10);
-    }, []);
+    }, []); // allBatchesCacheRef is a ref — stable, no deps needed
+
+    // Fire search only after user pauses typing 200ms — reads from in-memory cache, no localStorage
+    useEffect(() => {
+      if (activeMedIdx === null || debouncedSearch.length < 2) {
+        setMedSuggestions(prev => prev.length === 0 ? prev : []);
+        return;
+      }
+      setMedSuggestions(getMedSuggestions(debouncedSearch));
+    }, [debouncedSearch, activeMedIdx, getMedSuggestions]);
 
     const updateMedRow = (i: number, field: keyof MedRow, val: string | number) =>
       setMedRows(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
@@ -369,12 +413,9 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
                               updateMedRow(i, "mrp", 0);
                               const rect = e.currentTarget.getBoundingClientRect();
                               setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
-                              if (medSearchTimerRef.current) clearTimeout(medSearchTimerRef.current);
-                              medSearchTimerRef.current = setTimeout(() => {
-                                setActiveMedIdx(i);
-                                setHighlightedSugIdx(null);
-                                setMedSuggestions(getMedSuggestions(val));
-                              }, 220);
+                              setActiveMedIdx(i);
+                              setHighlightedSugIdx(null);
+                              setSearchTerm(val);
                             }}
                             onFocus={(e) => {
                               const rect = e.currentTarget.getBoundingClientRect();
