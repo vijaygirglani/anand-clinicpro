@@ -276,24 +276,27 @@ export function addStockAdjustment(adj: Omit<StockAdjustment, "id"|"createdAt">)
   storage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(adjs));
 }
 
-// Calculate tablets used for a specific batch from patient bills
-function getTabletsUsedForBatch(billId: string, batchNo: string, medicineName: string): number {
-  const patientBills = getPatientBills();
-  const adjustments = getStockAdjustments();
-  
-  let used = patientBills.reduce((sum, pb) => {
+// Calculate tablets used for a specific batch — accepts pre-parsed arrays to
+// avoid O(n) JSON.parse calls when invoked inside getAllBatchStocks loop.
+function getTabletsUsedForBatch(
+  billId: string, batchNo: string, medicineName: string,
+  patientBills: PatientBill[], adjustments: StockAdjustment[],
+): number {
+  const lowerName = medicineName.toLowerCase();
+  const normBatch = batchNo ?? "";
+
+  const used = patientBills.reduce((sum, pb) => {
     return sum + pb.items
-      .filter(i => i.billId === billId && i.batchNo === batchNo && 
-                   i.medicineName.toLowerCase() === medicineName.toLowerCase())
+      .filter(i => i.billId === billId && i.batchNo === batchNo &&
+                   i.medicineName.toLowerCase() === lowerName)
       .reduce((s, i) => s + i.qtyTablets, 0);
   }, 0);
 
-  // Apply stock adjustments — normalize batchNo to "" to avoid undefined vs "" mismatch
-  const normBatch = batchNo ?? "";
+  // Apply stock adjustments (negative = tablets removed)
   const adjTotal = adjustments
     .filter(a => a.billId === billId && (a.batchNo ?? "") === normBatch &&
-                 a.medicineName.toLowerCase() === medicineName.toLowerCase())
-    .reduce((s, a) => s - a.adjustQtyTablets, 0); // negative adjustment = used
+                 a.medicineName.toLowerCase() === lowerName)
+    .reduce((s, a) => s - a.adjustQtyTablets, 0);
 
   return used + adjTotal;
 }
@@ -338,6 +341,9 @@ function getExpiryStatus(days: number): BatchStock["expiryStatus"] {
 // Get ALL batch stocks (live calculation)
 export function getAllBatchStocks(): BatchStock[] {
   const bills = getPurchaseBills();
+  // Parse patient bills and adjustments ONCE here — getTabletsUsedForBatch
+  // is called per item so doing it inside would re-parse on every iteration.
+  const patientBills = getPatientBills();
   const adjustments = getStockAdjustments();
   const result: BatchStock[] = [];
   const REORDER_LEVEL = 10; // default reorder level in tablets
@@ -359,7 +365,7 @@ export function getAllBatchStocks(): BatchStock[] {
         item.qtyPacksFree = item.qtyPacksFree || (item as any).qtyFree || 0;
         item.ratePerPack = item.ratePerPack || (item as any).ratePerUnit || 0;
       }
-      const tabletsUsed = getTabletsUsedForBatch(bill.id, item.batchNo, item.medicineName);
+      const tabletsUsed = getTabletsUsedForBatch(bill.id, item.batchNo, item.medicineName, patientBills, adjustments);
       const tabletsAvailable = Math.max(0, item.totalTabletsReceived - tabletsUsed);
       const daysToExpiry = calcDaysToExpiry(item.expiryDate);
       const adjustedOut = adjustments.some(

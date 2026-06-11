@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Layout } from "@/components/Layout";
 import {
@@ -17,7 +17,8 @@ type FilterKey = "all" | "out" | "expired" | "low" | "expiry";
 export default function StockStatus() {
   const { toast } = useToast();
   const [activeFilter, setActiveFilter] = useState<FilterKey | null>(null);
-  const [allBatches, setAllBatches] = useState<BatchStock[]>(() => getAllBatchStocks());
+  const [allBatches, setAllBatches] = useState<BatchStock[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editingReorder, setEditingReorder] = useState<string | null>(null);
   const [reorderValue, setReorderValue] = useState<number>(10);
 
@@ -28,6 +29,15 @@ export default function StockStatus() {
 
   // Delete product confirm
   const [deleteBatch, setDeleteBatch] = useState<BatchStock | null>(null);
+
+  // Defer expensive getAllBatchStocks() until after first paint
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setAllBatches(getAllBatchStocks());
+      setLoading(false);
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const doctor = getActiveDoctor();
   const isAdmin = doctor?.id === 1;
@@ -245,6 +255,13 @@ export default function StockStatus() {
 
         {/* Table */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+          {loading ? (
+            <div className="p-8 space-y-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-9 rounded-lg bg-slate-100 animate-pulse" style={{ opacity: 1 - i * 0.12 }} />
+              ))}
+            </div>
+          ) : (
           <table className="w-full text-sm border-collapse">
             <thead className="bg-slate-700 text-white">
               <tr>
@@ -376,6 +393,7 @@ export default function StockStatus() {
               )}
             </tbody>
           </table>
+          )}
         </div>
       </div>
 
