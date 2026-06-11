@@ -405,12 +405,10 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
                               2 MRP
                             </span>
                           )}
-                          <input value={r.medicineName}
+                          <input defaultValue={r.medicineName}
                             ref={el => { medInputRefs.current[i] = el; }}
                             onChange={e => {
                               const val = e.target.value;
-                              updateMedRow(i, "medicineName", val);
-                              updateMedRow(i, "mrp", 0);
                               const rect = e.currentTarget.getBoundingClientRect();
                               setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
                               setActiveMedIdx(i);
@@ -422,7 +420,8 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
                               setDropdownPos({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 320) });
                               setActiveMedIdx(i);
                               setHighlightedSugIdx(null);
-                              if (r.medicineName) setMedSuggestions(getMedSuggestions(r.medicineName));
+                              const currentVal = medInputRefs.current[i]?.value || r.medicineName;
+                              if (currentVal) setMedSuggestions(getMedSuggestions(currentVal));
                             }}
                             onBlur={() => setTimeout(() => { setMedSuggestions([]); setActiveMedIdx(null); setHighlightedSugIdx(null); }, 150)}
                             onKeyDown={(e) => {
@@ -457,6 +456,7 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
                                   billId: s.bestBatch?.billId || "",
                                   landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
                                 } : r);
+                                if (medInputRefs.current[i]) medInputRefs.current[i]!.value = s.name;
                                 setMedSuggestions([]);
                                 setActiveMedIdx(null);
                                 setHighlightedSugIdx(null);
@@ -490,6 +490,7 @@ export const MedicineBillingSection = React.memo(forwardRef<MedicineBillingSecti
                                       billId: s.bestBatch?.billId || "",
                                       landingCostPerTablet: s.bestBatch?.landingCostPerTablet || 0,
                                     } : r);
+                                    if (medInputRefs.current[i]) medInputRefs.current[i]!.value = s.name;
                                     setMedSuggestions([]);
                                     setActiveMedIdx(null);
                                     setHighlightedSugIdx(null);
