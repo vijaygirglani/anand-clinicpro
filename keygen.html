@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Manglam ClinicPro — Key Generator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg,#0f172a,#1e293b); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+    .card { background:white; border-radius:24px; padding:40px; width:100%; max-width:520px; box-shadow:0 40px 80px rgba(0,0,0,.5); }
+    .logo { text-align:center; margin-bottom:32px; }
+    .logo-icon { width:64px; height:64px; border-radius:18px; margin:0 auto 12px; background:linear-gradient(135deg,#6366f1,#8b5cf6); display:flex; align-items:center; justify-content:center; font-size:28px; }
+    .logo h1 { font-size:22px; font-weight:900; color:#1e293b; }
+    .logo p { font-size:13px; color:#94a3b8; margin-top:4px; }
+    label { display:block; font-size:13px; font-weight:700; color:#475569; margin-bottom:6px; }
+    input, select { width:100%; padding:12px 16px; border-radius:12px; border:2px solid #e2e8f0; font-size:14px; outline:none; transition:border-color .2s; margin-bottom:16px; }
+    input:focus, select:focus { border-color:#6366f1; }
+    .btn { width:100%; padding:14px; border-radius:14px; border:none; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:white; font-size:15px; font-weight:900; cursor:pointer; }
+    .btn:hover { opacity:.9; }
+    .result { margin-top:24px; padding:20px; border-radius:16px; background:linear-gradient(135deg,#f0fdf4,#dcfce7); border:2px solid #86efac; display:none; }
+    .result-label { font-size:12px; font-weight:700; color:#15803d; margin-bottom:8px; }
+    .key-display { font-family:'Courier New',monospace; font-size:20px; font-weight:900; color:#14532d; letter-spacing:2px; word-break:break-all; background:white; padding:12px 16px; border-radius:10px; border:2px dashed #86efac; text-align:center; cursor:pointer; user-select:all; }
+    .copy-hint { font-size:11px; color:#4ade80; text-align:center; margin-top:6px; }
+    .info-row { display:flex; justify-content:space-between; margin-top:12px; font-size:12px; color:#374151; }
+    .info-row span { font-weight:700; }
+    .divider { height:1px; background:#f1f5f9; margin:24px 0; }
+    .history h3 { font-size:13px; font-weight:700; color:#475569; margin-bottom:10px; }
+    .hist-item { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-radius:10px; background:#f8fafc; margin-bottom:6px; font-size:12px; gap:8px; }
+    .hist-key { font-family:monospace; font-weight:700; color:#3730a3; font-size:11px; }
+    .hist-info { color:#64748b; font-size:11px; }
+    .hist-copy { background:#e0e7ff; border:none; border-radius:6px; padding:4px 10px; font-size:11px; font-weight:700; color:#4338ca; cursor:pointer; white-space:nowrap; }
+    .warn { background:#fef2f2; border:2px solid #fca5a5; border-radius:12px; padding:12px 16px; margin-bottom:16px; font-size:13px; color:#991b1b; display:none; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">🏥</div>
+    <h1>Manglam ClinicPro</h1>
+    <p>License Key Generator — Admin Panel</p>
+  </div>
+
+  <label>License Duration</label>
+  <select id="duration">
+    <option value="365">1 Year (365 days)</option>
+    <option value="730">2 Years (730 days)</option>
+    <option value="180">6 Months</option>
+    <option value="90">3 Months</option>
+    <option value="custom">Custom Date...</option>
+  </select>
+
+  <div id="customDateWrap" style="display:none">
+    <label>Expiry Date</label>
+    <input type="date" id="customDate" />
+  </div>
+
+  <div class="warn" id="warn"></div>
+  <button class="btn" onclick="generate()">🔑 Generate License Key</button>
+
+  <div class="result" id="result">
+    <div class="result-label">✅ License Key Generated</div>
+    <div class="key-display" id="keyDisplay" onclick="copyKey()">—</div>
+    <div class="copy-hint" id="copyHint">Click key to copy</div>
+    <div class="info-row">
+      <div>Expires: <span id="rExpiry">—</span></div>
+      <div>Days: <span id="rDays">—</span></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="history">
+    <h3>📋 Recently Generated Keys</h3>
+    <div id="histList"><p style="font-size:12px;color:#94a3b8">No keys yet.</p></div>
+  </div>
+</div>
+
+<script>
+// ── MUST MATCH license.ts exactly ────────────────────────────────────────────
+const SECRET_SALT = "MNGM2024CLPRO";
+
+function hash32(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0));
+}
+
+function toB36(n) {
+  return Math.abs(Math.floor(n)).toString(36).toUpperCase().padStart(4,"0").substring(0,4);
+}
+
+function generateLicenseKey(expiryDate) {
+  const days = Math.floor(new Date(expiryDate + "T00:00:00").getTime() / 86400000);
+  const daysStr = days.toString(36).toUpperCase().padStart(6,"0");
+  const h1 = toB36(hash32(daysStr + SECRET_SALT + "A"));
+  const h2 = toB36(hash32(daysStr + SECRET_SALT + "B"));
+  const h3 = toB36(hash32(daysStr + SECRET_SALT + "C"));
+  return `MNGM-${daysStr}-${h1}-${h2}-${h3}`;
+}
+
+function addDays(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split("T")[0];
+}
+
+document.getElementById("duration").addEventListener("change", function() {
+  document.getElementById("customDateWrap").style.display = this.value === "custom" ? "block" : "none";
+});
+
+function generate() {
+  const warn = document.getElementById("warn");
+  warn.style.display = "none";
+
+  const dur = document.getElementById("duration").value;
+  let expiryStr;
+  if (dur === "custom") {
+    expiryStr = document.getElementById("customDate").value;
+    if (!expiryStr) { warn.textContent = "⚠️ Please select a date."; warn.style.display = "block"; return; }
+  } else {
+    expiryStr = addDays(parseInt(dur));
+  }
+
+  const key = generateLicenseKey(expiryStr);
+  const expiry = new Date(expiryStr + "T00:00:00");
+  const days = Math.ceil((expiry - new Date().setHours(0,0,0,0)) / 86400000);
+
+  document.getElementById("keyDisplay").textContent = key;
+  document.getElementById("rExpiry").textContent = expiry.toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"});
+  document.getElementById("rDays").textContent = days + " days";
+  document.getElementById("result").style.display = "block";
+  document.getElementById("copyHint").textContent = "Click key to copy";
+  document.getElementById("copyHint").style.color = "#4ade80";
+
+  const hist = JSON.parse(localStorage.getItem("keygen_hist") || "[]");
+  hist.unshift({ key, expiry: expiryStr, days });
+  localStorage.setItem("keygen_hist", JSON.stringify(hist.slice(0,20)));
+  renderHistory();
+}
+
+function copyKey() {
+  const key = document.getElementById("keyDisplay").textContent;
+  navigator.clipboard.writeText(key).then(() => {
+    document.getElementById("copyHint").textContent = "✅ Copied!";
+    document.getElementById("copyHint").style.color = "#16a34a";
+  });
+}
+
+function renderHistory() {
+  const hist = JSON.parse(localStorage.getItem("keygen_hist") || "[]");
+  const el = document.getElementById("histList");
+  if (!hist.length) { el.innerHTML = '<p style="font-size:12px;color:#94a3b8">No keys yet.</p>'; return; }
+  el.innerHTML = hist.map(h => `
+    <div class="hist-item">
+      <div>
+        <div class="hist-key">${h.key}</div>
+        <div class="hist-info">Expires ${h.expiry} &middot; ${h.days} days</div>
+      </div>
+      <button class="hist-copy" onclick="navigator.clipboard.writeText('${h.key}').then(()=>this.textContent='✅')">Copy</button>
+    </div>`).join("");
+}
+
+document.getElementById("customDate").min = new Date().toISOString().split("T")[0];
+renderHistory();
+</script>
+</body>
+</html>
